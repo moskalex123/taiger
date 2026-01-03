@@ -77,3 +77,6 @@ htmlcov/
 .kilocode/
 .qoder/
 .trae/
+
+# Sensitive files
+README_for_AI.md
