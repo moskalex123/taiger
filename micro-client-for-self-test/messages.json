@@ -1,0 +1,31 @@
+{
+  "test_run_timestamp": "2025-12-03T19:04:48.039765",
+  "test_message": "Привет! Это тестовое сообщение.",
+  "total_responses": 4,
+  "responses": [
+    {
+      "model_name": "Unknown",
+      "model_id": -1,
+      "processing_time": -1,
+      "response_text": "❌ Model ID 37: Model not found in database"
+    },
+    {
+      "model_name": "google/gemma-3-27b-it",
+      "model_id": 36,
+      "processing_time": 1.14,
+      "response_text": "👋 Привет!\n\nЭто тестовое сообщение! 📝\nПросто проверяем, как всё отображается. 😉✨\n\n[Model: google/gemma-3-27b-it (ID: 36) | Processing time: 1.14s]"
+    },
+    {
+      "model_name": "mistralai/mistral-small-3.2-24b-instruct",
+      "model_id": 35,
+      "processing_time": 2.22,
+      "response_text": "🌟 Привет! 🌟\n\nЭто тестовое сообщение 📩\n\n🔹 Новости\n🔹 Обновления\n🔹 Анонсы\n\nСледите за нашими обновлениями! 🚀\n\n[Model: mistralai/mistral-small-3.2-24b-instruct (ID: 35) | Processing time: 2.22s]"
+    },
+    {
+      "model_name": "openai/gpt-oss-20b",
+      "model_id": 34,
+      "processing_time": 1.23,
+      "response_text": "👋 Привет!  \n✨ Это тестовое сообщение.  \n💬 Оставайтесь на связи! 🚀\n\n[Model: openai/gpt-oss-20b (ID: 34) | Processing time: 1.23s]"
+    }
+  ]
+}

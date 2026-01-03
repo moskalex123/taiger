@@ -1,0 +1,483 @@
+"""
+Основной процессор сообщений
+"""
+import os
+import asyncio
+from datetime import datetime, timezone
+from typing import Optional, List, Any, Union, Callable
+from pyrogram.client import Client
+from pyrogram.types import Message
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from models import User, ChannelPair, ScheduledPost, WorkerError, Model
+from db import async_session
+from telegram_worker.utils import get_localized_message, smart_truncate_message
+
+
+class MessageProcessor:
+    """Основной процессор входящих сообщений"""
+    
+    def __init__(self, user_id: int, logger, 
+                 # Callbacks to other components
+                 media_handler, ai_processor, balance_manager, 
+                 scheduler, notification_manager,
+                 # Callbacks to worker methods
+                 resolve_channel_callback, log_worker_status_callback,
+                 update_worker_activity_callback, get_message_via_raw_api_callback,
+                 log_scheduled_post_callback, log_insufficient_funds_post_callback,
+                 log_worker_error_callback, send_websocket_log_callback):
+        
+        self.user_id = user_id
+        self.logger = logger
+        
+        # Component references
+        self.media_handler = media_handler
+        self.ai_processor = ai_processor
+        self.balance_manager = balance_manager
+        self.scheduler = scheduler
+        self.notification_manager = notification_manager
+        
+        # Worker method callbacks
+        self._resolve_channel_identifier = resolve_channel_callback
+        self._log_worker_status = log_worker_status_callback
+        self._update_worker_activity = update_worker_activity_callback
+        self._get_message_via_raw_api = get_message_via_raw_api_callback
+        self._log_scheduled_post = log_scheduled_post_callback
+        self._log_insufficient_funds_post = log_insufficient_funds_post_callback
+        self._log_worker_error = log_worker_error_callback
+        self._send_websocket_log = send_websocket_log_callback
+        
+        # AI processing callback
+        self._process_with_hyperbolic_callback: Optional[Callable] = None
+        
+        # Initialize user logger for sending logs directly to user via Telegram bot
+        from .user_logger import get_user_logger
+        self.user_logger = get_user_logger(user_id)
+    
+    async def process_message(self, message: Message, channel_pair: ChannelPair, client: Client) -> bool:
+        """Process a single message for hybrid processing"""
+        try:
+            # Processing message
+            
+            # Process the message using existing process_rule logic
+            success = await self.process_rule(channel_pair, message, client)
+            
+            if success:
+                # Update the last processed message ID in the database
+                # This ensures the message won't be reprocessed in batch mode
+                try:
+                    from models import ChannelProcessingState
+                    from sqlalchemy import select
+                    
+                    async with async_session() as session:  # type: ignore
+                        result = await session.execute(
+                            select(ChannelProcessingState).where(
+                                ChannelProcessingState.user_id == self.user_id,
+                                ChannelProcessingState.channel_pair_id == channel_pair.id
+                            )
+                        )
+                        state = result.scalar_one_or_none()
+                        
+                        if state and message.id > state.last_processed_message_id:
+                            state.last_processed_message_id = message.id
+                            state.updated_at = datetime.now(timezone.utc)
+                            await session.commit()
+                except Exception as e:
+                    self.logger.error(f"Failed to update processing state for message {message.id}: {e}")
+                
+                # Получаем текст поста для упрощенного сообщения
+                post_text = ""
+                if hasattr(message, 'text') and message.text:
+                    post_text = message.text[:100] + ("..." if len(message.text) > 100 else "")
+                elif hasattr(message, 'caption') and message.caption:
+                    post_text = message.caption[:100] + ("..." if len(message.caption) > 100 else "")
+                
+                # Упрощенное сообщение об успешной обработке
+                await self._send_websocket_log(
+                    "post_processed_success", 
+                    f"Пост {message.id} обработан: {post_text}",
+                    "info"
+                )
+                
+                # Message processed successfully
+                return True
+            else:
+                # Упрощенное сообщение о неуспешной обработке
+                await self._send_websocket_log(
+                    "post_processing_failed", 
+                    f"Пост {message.id} не обработан: правило не сработало",
+                    "warning"
+                )
+                
+                # Message processing failed - rule not triggered
+                return False
+                
+        except Exception:
+            return False
+    
+    async def on_new_message(self, client: Client, message: Message, channel_rules: List[ChannelPair], is_processing: bool):
+        """Main handler for new messages."""
+        try:
+            # Update activity
+            await self._update_worker_activity()
+            
+            # Check if processing is enabled
+            if not is_processing:
+                # Send log to user via Telegram bot (only important messages)
+                await self.user_logger.send_status_update(f"⏸️ Message processing is paused", "info")
+                return
+            
+            # Mark message as processed immediately to prevent reprocessing
+            # This ensures the message won't be reprocessed even if processing fails
+            try:
+                # Add processed marker to the message
+                await self._add_processed_marker_to_message(message)
+            except Exception as e:
+                self.logger.warning(f"Failed to add processed marker to message {message.id}: {e}")
+            
+            # Process message against all rules
+            for rule in channel_rules:
+                try:
+                    success = await self.process_rule(rule, message, client)
+                    if success:
+                        # Update the last processed message ID in the database
+                        # This ensures the message won't be reprocessed in batch mode
+                        try:
+                            from models import ChannelProcessingState
+                            from sqlalchemy import select
+                            
+                            async with async_session() as session:  # type: ignore
+                                result = await session.execute(
+                                    select(ChannelProcessingState).where(
+                                        ChannelProcessingState.user_id == self.user_id,
+                                        ChannelProcessingState.channel_pair_id == rule.id
+                                    )
+                                )
+                                state = result.scalar_one_or_none()
+                                
+                                if state and message.id > state.last_processed_message_id:
+                                    state.last_processed_message_id = message.id
+                                    state.updated_at = datetime.now(timezone.utc)
+                                    await session.commit()
+                        except Exception as e:
+                            self.logger.error(f"Failed to update processing state for message {message.id}: {e}")
+                        
+                        # Send success log to user via Telegram bot (permanent log)
+                        await self.user_logger.send_log_to_user(f"✅ Message {message.id} processed successfully", "success")
+                        break  # Stop after first successful rule
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Ошибка обработки правила {rule.id} для поста {message.id}: {e}", exc_info=True)
+                    # Send error log to user via Telegram bot (permanent log)
+                    await self.user_logger.send_log_to_user(f"❌ Error processing rule {rule.id} for post {message.id}: {str(e)}", "error")
+                    # Log error but continue with other rules
+                    async with async_session() as session:  # type: ignore
+                        await self._log_worker_error(session, rule, message, "rule_processing_error", str(e))
+                    continue
+                    
+        except Exception as e:
+            self.logger.error(f"❌ Критическая ошибка в обработчике сообщений: {e}", exc_info=True)
+            await self._log_worker_status("message_handler_error", f"Critical error: {str(e)}", "error")
+            # Send critical error log to user via Telegram bot (permanent log)
+            await self.user_logger.send_log_to_user(f"💥 Critical error in message handler: {str(e)}", "error")
+            # Don't re-raise to prevent worker crash, just log and continue
+    
+    async def process_rule(self, rule: ChannelPair, message: Message, client: Client) -> bool:
+        """Process message according to a specific rule."""
+        # Source channel validation
+        source_id = await self._resolve_channel_identifier(rule.source_channel)
+        if not source_id or message.chat.id != source_id:
+            return False
+
+        # Check if balance is negative
+        async with async_session() as session:  # type: ignore
+            user = await session.get(User, self.user_id)
+            if not user:
+                self.logger.warning("User not found for balance check")
+                # Send warning to user (permanent log)
+                await self.user_logger.send_log_to_user("⚠️ User not found for balance check", "warning")
+                return False
+            
+            # Only check if balance is negative
+            current_balance = user.balance
+            if current_balance < 0:
+                self.logger.error(f"Negative balance detected: ${current_balance:.3f}, stopping worker")
+                # Send error to user (permanent log)
+                await self.user_logger.send_log_to_user(f"❌ Negative balance detected: ${current_balance:.3f}, stopping worker", "error")
+                # Log as insufficient funds post
+                payment_contact = os.getenv("PAYMENT_CONTACT", "@magellanvs")
+                error_message = f"Insufficient funds. For top-up, please contact {payment_contact}\n\nНедостаточно средств. Для пополнения обратитесь к {payment_contact}"
+                await self._log_insufficient_funds_post(session, rule, message, error_message)
+                
+                # Stop worker due to insufficient funds
+                await self._log_worker_status("insufficient_funds", "Stopping worker due to insufficient funds", "error")
+                await self._send_websocket_log('insufficient_funds', 'Worker stopped due to insufficient funds', 'error')
+                
+                # Exit the worker process
+                os._exit(1)
+        
+        # Handle media groups (albums)
+        if message.media_group_id:
+            # Send status update to user (temporary)
+            await self.user_logger.send_status_update(f"🔄 Processing media group {message.media_group_id}", "info")
+            return await self.media_handler.handle_media_group(message, rule)
+        
+        # Process text content
+        try:
+            processed_text, has_ai_error = await self.process_text_content(rule, message, client)
+            if processed_text == "UNSUPPORTED_FORMAT":
+                self.logger.warning(f"Message {message.id} has unsupported format, skipping")
+                # Send warning to user (permanent log)
+                await self.user_logger.send_log_to_user(f"⚠️ Message {message.id} has unsupported format, skipping", "warning")
+                return False
+        except Exception as e:
+            self.logger.error(f"Failed to process text content: {e}")
+            # Send error to user (permanent log)
+            await self.user_logger.send_log_to_user(f"❌ Failed to process text content: {str(e)}", "error")
+            return False
+        
+        # Get target channel
+        target_channel_id = await self._resolve_channel_identifier(rule.target_channel)
+        if not target_channel_id:
+            self.logger.error(f"Could not resolve target channel: {rule.target_channel}")
+            # Send error to user (permanent log)
+            await self.user_logger.send_log_to_user(f"❌ Could not resolve target channel: {rule.target_channel}", "error")
+            return False
+        
+        # Calculate schedule time
+        try:
+            scheduled_time = await self.scheduler.determine_schedule_time(rule, target_channel_id)
+        except Exception as e:
+            self.logger.error(f"Failed to calculate schedule time: {e}")
+            # Send error to user (permanent log)
+            await self.user_logger.send_log_to_user(f"❌ Failed to calculate schedule time: {str(e)}", "error")
+            return False
+        
+        # Сначала планируем сообщение без списания баланса
+        try:
+            scheduled_msg = await self.scheduler.schedule_message(
+                processed_text, target_channel_id, scheduled_time, message
+            )
+            
+            if scheduled_msg:
+                balance_deducted = 0
+                balance_after = 0
+                async with async_session() as session:  # type: ignore
+                    # Получаем баланс до списания
+                    user_before = await session.get(User, self.user_id)
+                    balance_before = user_before.balance if user_before else 0
+                    
+                    # Списываем баланс только после успешного планирования
+                    await self.balance_manager.deduct_balance(session, self.user_id, rule.model_id)
+                    
+                    # Получаем баланс после списания
+                    user_after = await session.get(User, self.user_id)
+                    balance_after = user_after.balance if user_after else 0
+                    
+                    # Вычисляем сколько списано
+                    balance_deducted = balance_before - balance_after
+                    
+                    await self._log_scheduled_post(
+                        session, rule.id, message, target_channel_id, 
+                        scheduled_msg, scheduled_time, processed_text, balance_after
+                    )
+                
+                self.logger.info(get_localized_message("message_scheduled", 
+                    schedule_time=scheduled_time.strftime('%Y-%m-%d %H:%M:%S')))
+                # Send enhanced success message to user with full post text, time, and balance (permanent log)
+                balance_info = f"New balance: ${balance_after:.2f}" if balance_after is not None else ""
+                # Truncate output text to prevent overly long messages
+                output_preview = processed_text[:500] + ("..." if len(processed_text) > 500 else "")
+                enhanced_message = f"✅ Post scheduled for {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')}\n\nOutput text:\n{output_preview}\n\n{balance_info}"
+                await self.user_logger.send_log_to_user(enhanced_message, "success")
+                
+                # Теперь логируем с информацией о списанном балансе
+                if self._log_worker_status:
+                    # Показываем полный текст без обрезания
+                    output_text = processed_text
+                    
+                    # Формируем информацию о балансе
+                    balance_info = ""
+                    if balance_deducted > 0:
+                        balance_info = f". Списано: {balance_deducted:.2f}"
+                    
+                    # Формируем сообщение с дополнительной информацией
+                    log_params = {
+                        "id": scheduled_msg.id, 
+                        "time": scheduled_time.strftime('%Y-%m-%d %H:%M:%S'),
+                        "output_text": output_text,
+                        "balance_info": balance_info
+                    }
+                    
+                    await self._log_worker_status("telegram_schedule_success", 
+                        "log_telegram_schedule_success", "success", **log_params)
+                    
+                    # Send insufficient balance notification if balance went negative
+                    if user_after and balance_after < 0:
+                        payment_contact = os.getenv("PAYMENT_CONTACT", "@magellanvs")
+                        notification_message = f"⚠️ Insufficient funds for future posts. Please contact {payment_contact} to top up your balance.\n\n⚠️ Недостаточно средств для будущих постов. Обратитесь к {payment_contact} для пополнения баланса."
+                        await self.balance_manager.send_insufficient_balance_notification(
+                            client, rule, target_channel_id, notification_message,
+                            self.scheduler.determine_schedule_time
+                        )
+                
+                return True
+            else:
+                self.logger.error("Failed to schedule message")
+                # Send error to user (permanent log)
+                await self.user_logger.send_log_to_user("❌ Failed to schedule message", "error")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Failed to schedule message: {e}", exc_info=True)
+            # Send error to user (permanent log)
+            await self.user_logger.send_log_to_user(f"❌ Failed to schedule message: {str(e)}", "error")
+            return False
+    
+    async def process_text_content(self, rule: ChannelPair, message: Message, client: Client) -> tuple[str, bool]:
+        """Apply text deletions and AI processing to message content."""
+        # Get text content
+        text = message.text or message.caption or ""
+        
+        # If no text, try to get via raw API
+        if not text and message.text is None and message.caption is None:
+            try:
+                text = await self._get_message_via_raw_api(message)
+            except Exception as e:
+                self.logger.error(f"Failed to get message via raw API: {e}")
+        
+        # Check for unsupported content
+        if not text and (message.sticker or message.voice or message.video_note):
+            return "UNSUPPORTED_FORMAT", False
+        
+        # If still no text, create default based on media type
+        if not text:
+            if message.photo:
+                text = "📸 Фотография"
+            elif message.video:
+                text = "🎥 Видео"
+            elif message.document:
+                text = "📄 Документ"
+            elif message.audio:
+                text = "🎵 Аудио"
+            elif message.animation:
+                text = "🎬 GIF анимация"
+            else:
+                text = "📎 Медиа файл"
+        
+        # Apply text deletions
+        if rule.text_to_delete is not None and rule.text_to_delete.strip():
+            original_length = len(text)
+            for pattern in [p.strip() for p in rule.text_to_delete.split(',') if p.strip()]:
+                text = text.replace(pattern, "")
+            text = text.strip()
+            self.logger.info(f"After deletions: {original_length} -> {len(text)} chars")
+        
+        # Apply AI processing if configured
+        if rule.model_id is not None and text.strip():
+            try:
+                # Safely access model attributes with fallback to database query
+                # First try to access the model relationship directly
+                model_system_content = None
+                model_name = None
+                model_temperature = 0.1
+                model_top_p = 0.9
+                model_max_tokens = 500
+                
+                # Try to access model attributes directly (if loaded)
+                # Use hasattr to safely check if model relationship is accessible
+                if hasattr(rule, 'model') and rule.model is not None:
+                    try:
+                        model_system_content = rule.model.system_content
+                        model_name = rule.model.model
+                        model_temperature = rule.model.temperature or 0.1
+                        model_top_p = rule.model.top_p or 0.9
+                        model_max_tokens = rule.model.max_tokens or 500
+                    except Exception as e:
+                        self.logger.warning(f"Could not access model attributes directly: {e}")
+                
+                # If we couldn't access model attributes, fetch from database
+                if model_system_content is None or model_name is None:
+                    self.logger.info("Falling back to database query for model data")
+                    async with async_session() as db_session:  # type: ignore
+                        stmt = select(Model).where(Model.id == rule.model_id)
+                        result = await db_session.execute(stmt)
+                        model = result.scalar_one_or_none()
+                        
+                        if model:
+                            model_system_content = model.system_content
+                            model_name = model.model
+                            model_temperature = model.temperature or 0.1
+                            model_top_p = model.top_p or 0.9
+                            model_max_tokens = model.max_tokens or 500
+                        else:
+                            self.logger.warning(f"Model with ID {rule.model_id} not found in database")
+                            # Send error to user (permanent log)
+                            await self.user_logger.send_log_to_user(f"⚠️ Model with ID {rule.model_id} not found for AI processing", "warning")
+                            return text, False
+                
+                # Use rule-specific values or fall back to model defaults
+                system_prompt = rule.system_content if rule.system_content is not None else model_system_content
+                temperature = rule.temperature if rule.temperature is not None else model_temperature
+                top_p = rule.top_p if rule.top_p is not None else model_top_p
+                max_tokens = rule.max_tokens if rule.max_tokens is not None else model_max_tokens
+                
+                # Use AI processor through callback
+                if self._process_with_hyperbolic_callback:
+                    processed_text = await self._process_with_hyperbolic_callback(
+                        system_content=system_prompt,
+                        user_content=text,
+                        model_name=model_name,
+                        temperature=temperature,
+                        top_p=top_p,
+                        max_tokens=max_tokens
+                    )
+                    
+                    if processed_text:
+                        self.logger.info(f"AI processing successful: {len(processed_text)} chars output")
+                        return processed_text, False
+                    else:
+                        self.logger.warning("AI processing failed, using original text")
+                        # Send warning to user (permanent log)
+                        await self.user_logger.send_log_to_user("⚠️ AI processing failed, using original text", "warning")
+                        return text, True
+                else:
+                    # AI processing not available
+                    self.logger.info("AI processing callback not available")
+                    # Send info to user (permanent log)
+                    await self.user_logger.send_log_to_user("ℹ️ AI processing not configured, using original text", "info")
+                    return text, False
+            except Exception as e:
+                self.logger.error(f"Failed to process text content with AI: {e}", exc_info=True)
+                # Send error to user (permanent log)
+                await self.user_logger.send_log_to_user(f"❌ AI processing error: {str(e)}", "error")
+                return text, False
+        
+        # Smart truncate if needed
+        if len(text) > 1000:
+            text = smart_truncate_message(text, 1000, self.logger)
+        
+        return text, False
+
+    async def _add_processed_marker_to_message(self, message: Message):
+        """Add processed marker to message to prevent reprocessing"""
+        try:
+            marker = "✅ "
+            
+            if message.text:
+                if not message.text.startswith("✅"):
+                    new_text = marker + message.text
+                    if len(new_text) <= 4000:
+                        await message.edit_text(new_text)
+                        return
+            
+            if message.caption:
+                if not message.caption.startswith("✅"):
+                    new_caption = marker + message.caption
+                    if len(new_caption) <= 1000:
+                        await message.edit_caption(new_caption)
+                        return
+                    
+        except Exception as e:
+            # Don't fail if we can't add the marker
+            self.logger.warning(f"Failed to add processed marker to message {message.id}: {e}")

@@ -1,0 +1,2675 @@
+<template>
+  <div class="channel-pairs-container" :class="{ 'hidden-ui': hideMainUI }">
+    <h2 v-if="!hideMainUI" class="channel-pairs-title">
+      {{ $t('channel_pair_rules') }}
+      <span class="debug-tag">fix-20241014-chan</span>
+    </h2>
+
+    <!-- Display existing rules -->
+    <div v-if="rules.length > 0 && !hideMainUI" class="rules-list">
+      <div class="rules-cards">
+        <div v-for="(rule, index) in rules" :key="rule.id" class="rule-card">
+          <div v-if="index < 5">
+            <!-- Only log first 5 rules to avoid console spam -->
+            {{ console.log('ChannelPairs: Rendering rule', index, rule) }}
+          </div>
+          <!-- Card Header -->
+          <div class="rule-card-header">
+            <div class="rule-info-left">
+              <div class="rule-number">{{ $t('rule') }} {{ index + 1 }}</div>
+              <div class="rule-actions">
+                <button @click="editRule(rule)" class="action-btn edit-btn" :title="$t('edit_rule')">
+                  <svg class="icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+                <button v-if="rule.id" @click="deleteRule(rule.id)" class="action-btn delete-btn" :title="$t('delete_rule')">
+                  <svg class="icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <polyline points="3,6 5,6 21,6"/>
+                    <path d="M19,6v14a2,2,0 0,1-2,2H7a2,2,0 0,1-2-2V6m3,0V4a2,2,0 0,1,2-2h4a2,2,0 0,1,2,2V6"/>
+                    <line x1="10" y1="11" x2="10" y2="17"/>
+                    <line x1="14" y1="11" x2="14" y2="17"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="channel-flow">
+              <div class="channel-info source">
+                <div class="channel-label">{{ $t('source_channel') }}</div>
+                <div class="channel-name">{{ getChannelDisplayName(rule.source_channel, subscribedChannels) }}</div>
+              </div>
+              <div class="flow-arrow">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path d="M5 12h14m-7-7 7 7-7 7"/>
+                </svg>
+              </div>
+              <div class="channel-info target">
+                <div class="channel-label">{{ $t('target_channel') }}</div>
+                <div class="channel-name">{{ getChannelDisplayName(rule.target_channel, adminChannels) }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Main Rule Content -->
+          <div class="rule-content">
+            <div v-if="rule.system_content" class="processing-rule">
+              <div class="rule-label">{{ $t('ai_instruction') }}:</div>
+              <div class="rule-text">
+                {{ rule.system_content }}
+              </div>
+            </div>
+            
+            <!-- Quick Info Tags -->
+            <div class="rule-tags">
+              <span v-if="rule.model_name" class="tag model-tag">
+                <svg class="tag-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path d="M9.663 17h4.673M12 3v1m6.364 1.636-.707.707M21 12h-1M4 12H3m3.343-5.657-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                </svg>
+                {{ rule.model_name }}
+              </span>
+              <span v-if="rule.text_to_delete" class="tag delete-tag">
+                <svg class="tag-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path d="M3 6h18m-2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                </svg>
+                {{ $t('delete_text_before_processing') }}: "{{ rule.text_to_delete }}"
+              </span>
+              <span class="tag time-tag">
+                <svg class="tag-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12,6 12,12 16,14"/>
+                </svg>
+                {{ $t('delay_post_after_previous') }}: {{ rule.hour_min }}h - {{ rule.hour_max }}h
+              </span>
+            </div>
+
+            <!-- Advanced Settings (Collapsible) -->
+            <div class="advanced-settings" v-if="rule.model_name && rule.id">
+              <button 
+                @click="toggleAdvancedSettings(rule.id)"
+                class="advanced-toggle">
+                <svg class="toggle-icon" width="28" height="28" :class="{ 'rotated': rule.id && showAdvanced[rule.id] }" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <polyline points="6,9 12,15 18,9"/>
+                </svg>
+                {{ $t('advanced_settings') }}
+              </button>
+              <div v-if="rule.id && showAdvanced[rule.id]" class="advanced-content">
+                <div class="param-grid">
+                  <div class="param-item">
+                    <span class="param-label">{{ $t('max_tokens') }}:</span>
+                    <span class="param-value">{{ rule.max_tokens || 'Auto' }}</span>
+                  </div>
+                  <div class="param-item">
+                    <span class="param-label">{{ $t('temperature') }}:</span>
+                    <span class="param-value">{{ rule.temperature || 'Auto' }}</span>
+                  </div>
+                  <div class="param-item">
+                    <span class="param-label">{{ $t('top_p') }}:</span>
+                    <span class="param-value">{{ rule.top_p || 'Auto' }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div v-else-if="!hideMainUI">
+      <p>{{ $t('no_channel_rules') }}</p>
+    </div>
+
+    <!-- Add new rule form -->
+    <div v-if="!hideMainUI" class="add-rule-section">
+      <div class="action-buttons">
+        <button @click="openRuleWizard" class="wizard-btn">
+          {{ $t('add_new_rule') }}
+        </button>
+        <button @click="toggleAddRuleForm" class="classic-form-btn">
+          {{ showAddRuleForm ? $t('cancel') : $t('classic_form') }}
+        </button>
+        <button @click="toggleCreateChannelForm" class="create-channel-btn">
+          {{ showCreateChannelForm ? $t('cancel') : $t('create_channel') }}
+        </button>
+      </div>
+      
+      <!-- Loading indicator -->
+      <div v-if="loadingChannels" class="loading-indicator">
+        <div class="spinner"></div>
+        <span>{{ $t('loading_available_channels') }}</span>
+      </div>
+
+      <form v-if="showAddRuleForm" @submit.prevent="saveRule" class="add-rule-form">
+        <div class="form-header">
+          <h3>{{ editingRuleId ? $t('edit_rule_title') : $t('add_new_rule') }}</h3>
+          <button type="button" @click="refreshChannels" class="refresh-channels-btn" :disabled="loadingChannels" :title="$t('refresh_channels')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" :class="{ 'spinning': loadingChannels }">
+              <polyline points="23 4 23 10 17 10"/>
+              <polyline points="1 20 1 14 7 14"/>
+              <path d="m3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            {{ $t('refresh_channels') }}
+          </button>
+        </div>
+        <div class="channel-fields">
+          <div class="channel-field">
+            <label for="source_channel">{{ $t('source_channel_label') }}</label>
+            <select id="source_channel" v-model="newRule.source_channel" required>
+              <option value="">{{ $t('select_draft_channel') }}</option>
+              <option v-for="channel in subscribedChannels" :key="channel.id" :value="getChannelValue(channel)">
+                {{ channel.title }} {{ channel.username ? `(@${channel.username})` : `(ID: ${channel.id})` }}
+              </option>
+            </select>
+          </div>
+          
+          <div class="channel-field">
+            <label for="target_channel">{{ $t('target_channel_label') }}</label>
+            <select id="target_channel" v-model="newRule.target_channel" required>
+              <option value="">{{ $t('select_clean_channel') }}</option>
+              <option v-for="channel in adminChannels" :key="channel.id" :value="getChannelValue(channel)">
+                {{ channel.title }} {{ channel.username ? `(@${channel.username})` : `(ID: ${channel.id})` }}
+              </option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label for="text_to_delete">{{ $t('text_to_delete_label') }}</label>
+          <input type="text" id="text_to_delete" v-model="newRule.text_to_delete">
+        </div>
+        <div>
+          <label for="model_id">{{ $t('ai_model_label').replace(' (необязательно)', '').replace(' (optional)', '') }} {{ $t('price_per_post_label') }}</label>
+          <select id="model_id" v-model="newRule.model_id" @change="onModelChange">
+            <option :value="null">{{ $t('none') }}</option>
+            <option v-for="model in models" :key="model.id" :value="model.id">
+              {{ model.model }} (<PriceDisplay :price="model.price_per_post || 0" :decimals="3" />)
+            </option>
+          </select>
+        </div>
+        <div v-if="newRule.model_id" class="model-settings">
+          <div class="system-content">
+            <label for="system_content">{{ $t('system_content') }}</label>
+            <textarea id="system_content" v-model="newRule.system_content"></textarea>
+          </div>
+          <div class="model-params">
+            <div>
+              <label for="max_tokens">{{ $t('max_tokens_label') }}</label>
+              <input type="number" id="max_tokens" v-model.number="newRule.max_tokens" min="50" max="5000">
+            </div>
+            <div>
+              <label for="temperature">{{ $t('temperature_label') }}</label>
+              <input type="number" step="0.1" id="temperature" v-model.number="newRule.temperature">
+            </div>
+            <div>
+              <label for="top_p">{{ $t('top_p_label') }}</label>
+              <input type="number" step="0.1" id="top_p" v-model.number="newRule.top_p">
+            </div>
+          </div>
+        </div>
+        <div class="hour-range-field">
+          <div class="hour-range-single-line">
+            <span>{{ $t('postpone_post_text') }}</span>
+            <input type="number" id="hour_min" v-model.number="newRule.hour_min" min="0" max="23" style="width: 60px; margin: 0 5px;">
+            <span>{{ $t('to') }}</span>
+            <input type="number" id="hour_max" v-model.number="newRule.hour_max" min="0" max="23" style="width: 60px; margin: 0 5px;">
+            <span>{{ $t('hours') }}</span>
+          </div>
+        </div>
+        <button type="submit" :disabled="savingRule" class="save-button">
+          <div v-if="savingRule" class="button-spinner"></div>
+          <span v-if="!savingRule">{{ editingRuleId ? $t('update_rule') : $t('save_rule') }}</span>
+          <span v-else>{{ $t('saving') }}</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- Create channel form -->
+    <form v-if="showCreateChannelForm" @submit.prevent="createChannel" class="create-channel-form">
+        <div>
+          <label for="channel_title">{{ $t('channel_title') }}</label>
+          <input 
+            type="text" 
+            id="channel_title" 
+            v-model="newChannel.title" 
+            :placeholder="$t('channel_title')"
+            required
+          >
+        </div>
+        
+        <div>
+          <label for="channel_description">{{ $t('channel_description') }}</label>
+          <textarea 
+            id="channel_description" 
+            v-model="newChannel.description"
+            :placeholder="$t('channel_description')"
+            rows="3"
+          ></textarea>
+        </div>
+        
+        <div class="checkbox-field">
+          <label>
+            <input 
+              type="checkbox" 
+              v-model="newChannel.is_megagroup"
+            >
+            {{ $t('create_as_supergroup') }}
+          </label>
+        </div>
+        
+        <button type="submit" :disabled="creatingChannel || !newChannel.title.trim()" class="create-button">
+          <div v-if="creatingChannel" class="button-spinner"></div>
+          <span v-if="!creatingChannel">{{ $t('create_channel') }}</span>
+          <span v-else>{{ $t('creating') }}...</span>
+        </button>
+        
+        <!-- Show validation hints -->
+        <div v-if="newChannel.title && newChannel.title.length > 200" class="validation-hint warning">
+          ⚠️ {{ $t('channel_title_too_long') }}
+        </div>
+        <div v-if="newChannel.description && newChannel.description.length > 200" class="validation-hint warning">
+          ⚠️ {{ $t('channel_description_too_long') }}
+        </div>
+      </form>
+
+    <!-- Rule Wizard -->
+    <RuleWizard
+      v-if="showRuleWizard"
+      :channels="{ subscribed: subscribedChannels, admin: adminChannels }"
+      :models="models"
+      :editing-rule="editingRuleForWizard as Record<string, any> | undefined"
+      :loading-channels="loadingChannels"
+      @close="closeRuleWizard"
+      @save="saveRuleFromWizard"
+      @refresh-channels="refreshChannels"
+      @rule-created-successfully="handleRuleCreatedSuccessfully"
+    />
+    
+    <!-- Progress Indicator -->
+    <ProgressIndicator
+      :show="showProgress"
+      :title="$t('creating_rule_and_starting_worker')"
+      :steps="progressSteps"
+    </ProgressIndicator>
+  </div>
+</template>
+
+<script lang="ts">
+import { defineComponent, ref, onMounted, nextTick, watch, type PropType, provide, defineExpose, inject } from 'vue';
+import axios from 'axios';
+import { API_BASE_URL } from '@/config';
+import { getDefaultSystemPrompt } from '@/utils/systemPrompt';
+import { useI18n } from 'vue-i18n';
+import RuleWizard from './RuleWizard/RuleWizard.vue';
+import PriceDisplay from './PriceDisplay.vue';
+import ProgressIndicator from './ProgressIndicator.vue';
+import { useNotifications } from '../composables/useNotifications.ts';
+
+type ProgressStatus = 'pending' | 'loading' | 'completed' | 'error';
+
+interface ProgressStep {
+  title: string;
+  description: string;
+  status: ProgressStatus;
+}
+
+interface Model {
+  id: number;
+  model: string;
+  system_content: string | null;
+  user_content: string | null;
+  max_tokens: number | null;
+  temperature: number | null;
+  top_p: number | null;
+  price_per_post: number | null;
+}
+
+interface ChannelInfo {
+  id: number;
+  title: string;
+  username?: string;
+  photo_url?: string;
+  type: string;
+  is_admin: boolean;
+}
+
+interface ChannelPairRule {
+  id?: number;
+  source_channel: string | null; // Changed from number to string
+  target_channel: string | null; // Changed from number to string
+  text_to_delete: string | null;
+  model_id: number | null;
+  model_name?: string; // For display
+  system_content: string | null;
+  max_tokens: number | null;
+  temperature: number | null;
+  top_p: number | null;
+  hour_min: number | null;
+  hour_max: number | null;
+}
+
+export default defineComponent({
+  name: 'ChannelPairs',
+  components: {
+    RuleWizard,
+    PriceDisplay,
+    ProgressIndicator
+  },
+  props: {
+    preloadedChannels: {
+      type: Object as PropType<{ subscribed: ChannelInfo[], admin: ChannelInfo[] }>,
+      default: () => ({ subscribed: [], admin: [] })
+    },
+    channelsLoaded: {
+      type: Boolean,
+      default: false
+    },
+    hideMainUI: {
+      type: Boolean,
+      default: false
+    }
+  },
+  emits: ['rule-created-successfully'],
+  setup(props, { emit }) {
+    // Initialize i18n
+    const { t: $t, locale } = useI18n();
+    
+    // Create a robust getChannelDisplayName function with proper local implementation
+    // Always use the local implementation to avoid injection issues
+    // Handle gracefully when channels have been deleted from Telegram
+    const getChannelDisplayName = (channelValue: string | null, channels: ChannelInfo[] | { value: ChannelInfo[] }) => {
+      try {
+        // Handle both direct arrays and refs to arrays
+        const channelsArray = Array.isArray(channels) ? channels : (channels && 'value' in channels && Array.isArray(channels.value) ? channels.value : []);
+        if (!channelValue || !Array.isArray(channelsArray)) return channelValue || 'Unknown Channel';
+        
+        // Try to find channel by exact match (username with @)
+        let channel = channelsArray.find(c => getChannelValue(c) === channelValue);
+        
+        // If not found by username, try to find by ID
+        if (!channel && channelValue && !channelValue.startsWith('@')) {
+          const channelId = parseInt(channelValue);
+          if (!isNaN(channelId)) {
+            channel = channelsArray.find(c => c.id === channelId);
+          }
+        }
+        
+        // Also try to match by username without @ prefix
+        if (!channel && channelValue && channelValue.startsWith('@')) {
+          const cleanUsername = channelValue.replace('@', '');
+          channel = channelsArray.find(c => 
+            (c.username && (c.username === channelValue || c.username === cleanUsername)) ||
+            (c.username && c.username.startsWith('@') && c.username === channelValue)
+          );
+        }
+        
+        // Return title if found, otherwise return the original value (don't mark as deleted unless confirmed)
+        if (channel && channel.title) {
+          return channel.title;
+        }
+        
+        // Only mark as deleted if we can confirm it's actually missing
+        // For now, just return a clean display name
+        if (channelValue) {
+          // If it looks like a username
+          if (channelValue.startsWith('@')) {
+            return channelValue;
+          }
+          // If it looks like an ID
+          else if (!isNaN(parseInt(channelValue))) {
+            return `Channel ID: ${channelValue}`;
+          }
+          // Otherwise show the original value
+          else {
+            return channelValue;
+          }
+        }
+        
+        return 'Unknown Channel';
+      } catch (error) {
+        console.error('Error in getChannelDisplayName:', error);
+        return '[Error Loading Channel]';
+      }
+    };
+    
+    // Debugging: Log that we're using the local implementation
+    console.log('ChannelPairs: Using local getChannelDisplayName implementation');
+    
+    // Initialize notifications
+    const { showSuccess, showError, showWarning } = useNotifications();
+    
+    // Add showSuccessNotification alias for compatibility
+    const showSuccessNotification = showSuccess;
+    const rules = ref<ChannelPairRule[]>([]);
+    const models = ref<Model[]>([]);
+    const showAddRuleForm = ref(false);
+    const editingRuleId = ref<number | null>(null);
+    const subscribedChannels = ref<ChannelInfo[]>([]);
+    const adminChannels = ref<ChannelInfo[]>([]);
+    const loadingChannels = ref(false);
+    const channelsLoaded = ref(false);
+    const savingRule = ref(false);
+    
+    // Card state management
+    const expandedRules = ref<{ [key: number]: boolean }>({});
+    const showAdvanced = ref<{ [key: number]: boolean }>({});
+    
+    const defaultNewRule: () => ChannelPairRule = () => ({
+      id: undefined, // Ensure id is reset for new rules
+      source_channel: null,
+      target_channel: null,
+      text_to_delete: '', // Or null, depending on preference
+      model_id: null,
+      system_content: null,
+      max_tokens: null,
+      temperature: null,
+      top_p: null,
+      hour_min: 7,
+      hour_max: 9,
+    });
+
+    const newRule = ref<ChannelPairRule>(defaultNewRule());
+
+    // Create channel form variables
+    const showCreateChannelForm = ref(false);
+    const creatingChannel = ref(false);
+    const newChannel = ref({
+      title: '',
+      description: '',
+      is_megagroup: false
+    });
+
+    // Wizard state
+    const showRuleWizard = ref(false);
+    const editingRuleForWizard = ref<ChannelPairRule | null>(null);
+    
+    // Progress indicator state
+    const showProgress = ref(false);
+    const progressSteps = ref<ProgressStep[]>([
+      { title: 'Остановка воркера', description: 'Подготовка к обновлению', status: 'pending' },
+      { title: 'Сохранение правила', description: 'Создание нового правила', status: 'pending' },
+      { title: 'Запуск воркера', description: 'Применение изменений', status: 'pending' },
+      { title: 'Обновление статуса', description: 'Финализация', status: 'pending' }
+    ]);
+
+    // Function to get row class for alternating colors
+    const getRowClass = (index: number): string => {
+      return index % 2 === 0 ? 'row-even' : 'row-odd';
+    };
+
+    const fetchRules = async () => {
+      try {
+        // Support both cookie-based auth and token-based auth (for TMA)
+        const token = localStorage.getItem('auth_token');
+        const headers: any = {};
+        
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+        
+        const response = await axios.get(`${API_BASE_URL}/api/channel_pairs`, {
+          withCredentials: true,
+          headers
+        });
+        rules.value = response.data;
+      } catch (error: unknown) {
+        console.error('Error fetching rules:', error instanceof Error ? error.message : String(error));
+        // Handle error (e.g., show a notification to the user)
+      }
+    };
+
+    const fetchModels = async () => {
+      try {
+        // Support both cookie-based auth and token-based auth (for TMA)
+        const token = localStorage.getItem('auth_token');
+        const headers: any = {};
+        
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+        
+        const response = await axios.get(`${API_BASE_URL}/api/channel_pairs/models`, {
+          withCredentials: true,
+          headers
+        });
+        models.value = response.data;
+      } catch (error: unknown) {
+        console.error('Error fetching models:', error instanceof Error ? error.message : String(error));
+      }
+    };
+
+    const fetchChannels = async (forceRefresh = false) => {
+      // Use preloaded channels if available and not forcing refresh
+      if (props.channelsLoaded && !forceRefresh && props.preloadedChannels) {
+        subscribedChannels.value = props.preloadedChannels.subscribed;
+        adminChannels.value = props.preloadedChannels.admin;
+        channelsLoaded.value = true;
+        console.log(`Using preloaded channels: ${subscribedChannels.value.length} subscribed, ${adminChannels.value.length} admin`);
+        return;
+      }
+      
+      if (channelsLoaded.value && !forceRefresh) return;
+      
+      loadingChannels.value = true;
+      try {
+        // Support both cookie-based auth and token-based auth (for TMA)
+        const token = localStorage.getItem('auth_token');
+        const headers: any = {};
+        
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+        
+        const response = await axios.get(`${API_BASE_URL}/api/channel_pairs/channels`, {
+          withCredentials: true,
+          headers
+        });
+        subscribedChannels.value = response.data.subscribed_channels;
+        adminChannels.value = response.data.admin_channels;
+        channelsLoaded.value = true;
+        
+        console.log(`Channels loaded: ${subscribedChannels.value.length} subscribed, ${adminChannels.value.length} admin`);
+      } catch (error: unknown) {
+        console.error('Error fetching channels:', error instanceof Error ? error.message : String(error));
+        // Handle error (e.g., show notification to user)
+      } finally {
+        loadingChannels.value = false;
+      }
+    };
+
+    const onModelChange = async () => {
+      if (newRule.value.model_id) {
+        const selectedModel = models.value.find(m => m.id === newRule.value.model_id);
+        console.log('Selected Model for param population:', selectedModel); // For debugging
+        
+        const defaultSystemPrompt = await getDefaultSystemPrompt(locale.value);
+        
+        if (selectedModel) {
+          newRule.value.system_content = defaultSystemPrompt; // Use project settings instead of selectedModel.system_content
+          newRule.value.max_tokens = selectedModel.max_tokens;
+          newRule.value.temperature = selectedModel.temperature;
+          newRule.value.top_p = selectedModel.top_p;
+        }
+      } else {
+        // Reset AI params if no model is selected
+        newRule.value.system_content = null;
+        newRule.value.max_tokens = null;
+        newRule.value.temperature = null;
+        newRule.value.top_p = null;
+      }
+    };
+
+    watch(() => newRule.value.model_id, async (val) => {
+      if (val) {
+        const selectedModel = models.value.find(m => m.id === val);
+        const defaultSystemPrompt = await getDefaultSystemPrompt(locale.value);
+        newRule.value.system_content = defaultSystemPrompt;
+        if (selectedModel) {
+          newRule.value.max_tokens = selectedModel.max_tokens;
+          newRule.value.temperature = selectedModel.temperature;
+          newRule.value.top_p = selectedModel.top_p;
+        }
+      } else {
+        newRule.value.system_content = null;
+        newRule.value.max_tokens = null;
+        newRule.value.temperature = null;
+        newRule.value.top_p = null;
+      }
+    });
+
+    // Helper function to ensure channel value has @ prefix for usernames
+    const normalizeChannelForDB = (channelValue: string | null, channels: ChannelInfo[]): string | null => {
+      if (!channelValue) return null;
+      
+      // Find the channel info to determine if we should save username or ID
+      const channel = channels.find(c => getChannelValue(c) === channelValue);
+      
+      if (channel) {
+        // If channel has username, save username with @
+        if (channel.username) {
+          return channel.username.startsWith('@') ? channel.username : `@${channel.username}`;
+        }
+        // If no username, save ID
+        return channel.id.toString();
+      }
+      
+      // Fallback: if it's a numeric ID, keep as is
+      if (!isNaN(Number(channelValue))) {
+        return channelValue;
+      }
+      
+      // If it's a username, ensure it starts with @
+      return channelValue.startsWith('@') ? channelValue : `@${channelValue}`;
+    };
+
+    // Progress management functions
+    const updateProgressStep = (stepIndex: number, status: ProgressStatus) => {
+      if (progressSteps.value[stepIndex]) {
+        progressSteps.value[stepIndex].status = status;
+      }
+    };
+    
+    const resetProgress = () => {
+      progressSteps.value.forEach(step => {
+        step.status = 'pending';
+      });
+    };
+    
+    const showProgressModal = () => {
+      resetProgress();
+      showProgress.value = true;
+    };
+    
+    const hideProgressModal = () => {
+      showProgress.value = false;
+    };
+    
+    // Функция для получения статуса воркера
+    const fetchWorkerStatus = async () => {
+      try {
+        // Support both cookie-based auth and token-based auth (for TMA)
+        const token = localStorage.getItem('auth_token');
+        const headers: any = {};
+        
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+        
+        const response = await axios.get(`${API_BASE_URL}/api/workers/status`, {
+          withCredentials: true,
+          headers
+        });
+        return response.data;
+      } catch (error: any) {
+        console.error('Error fetching worker status:', error);
+        return { status: 'unknown' };
+      }
+    };
+    
+    // Add fetchChannelPairs alias for compatibility
+    const fetchChannelPairs = fetchRules;
+
+    // Function to play sound (improved version with async/await)
+    const playSound = async (soundName: string) => {
+      try {
+        const audio = new Audio(`/sounds/${soundName}.mp3`);
+        audio.volume = 0.5;
+        
+        // Preload the audio
+        audio.load();
+        
+        // Wait for audio to be ready and play
+        await new Promise((resolve, reject) => {
+          audio.addEventListener('canplaythrough', resolve, { once: true });
+          audio.addEventListener('error', reject, { once: true });
+        });
+        
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+          console.log(`Sound ${soundName} played successfully`);
+        }
+      } catch (e) {
+        console.log(`Sound playback error for ${soundName}:`, e);
+        // Fallback: try to play without waiting
+        try {
+          const fallbackAudio = new Audio(`/sounds/${soundName}.mp3`);
+          fallbackAudio.volume = 0.3;
+          fallbackAudio.play();
+        } catch (fallbackError) {
+          console.log('Fallback sound also failed:', fallbackError);
+        }
+      }
+    };
+    
+    // Function to stop worker
+    const stopWorker = async () => {
+      try {
+        // Support both cookie-based auth and token-based auth (for TMA)
+        const token = localStorage.getItem('auth_token');
+        const headers: any = {};
+        
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+        
+        // First check if worker is actually running to avoid unnecessary API calls
+        const statusResponse = await axios.get(`${API_BASE_URL}/api/workers/status`, {
+          withCredentials: true,
+          headers
+        });
+        
+        if (statusResponse.data.status === 'stopped' || statusResponse.data.status === 'not_configured') {
+          console.log('Worker is already stopped, skipping stop request');
+          return;
+        }
+        
+        await axios.post(`${API_BASE_URL}/api/workers/stop`, {}, {
+          withCredentials: true,
+          headers
+        });
+        console.log('Worker stopped successfully');
+        // Play stop sound when worker is stopped
+        await playSound('stop');
+      } catch (error: unknown) {
+        console.error('Error stopping worker:', error instanceof Error ? error.message : String(error));
+        // Don't throw error - worker stop is not critical for rule saving
+      }
+    };
+
+    // Function to start worker
+    const startWorker = async () => {
+      try {
+        // Support both cookie-based auth and token-based auth (for TMA)
+        const token = localStorage.getItem('auth_token');
+        const headers: any = {};
+        
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+        
+        // First check if worker is already running to avoid unnecessary API calls
+        const statusResponse = await axios.get(`${API_BASE_URL}/api/workers/status`, {
+          withCredentials: true,
+          headers
+        });
+        
+        if (statusResponse.data.status === 'running' || statusResponse.data.status === 'active') {
+          console.log('Worker is already running, skipping start request');
+          return;
+        }
+        
+        await axios.post(`${API_BASE_URL}/api/workers/start`, {}, {
+          withCredentials: true,
+          headers
+        });
+        console.log('Worker started successfully');
+        // Play work sound when worker is started
+        await playSound('work');
+      } catch (error: unknown) {
+        console.error('Error starting worker:', error instanceof Error ? error.message : String(error));
+        // Don't throw error - worker start failure shouldn't prevent rule creation
+      }
+    };
+
+    const saveRule = async () => {
+      try {
+        const audio = new Audio(`/sounds/${soundName}.mp3`);
+        audio.volume = 0.5;
+        
+        // Preload the audio
+        audio.load();
+        
+        // Wait for audio to be ready and play
+        await new Promise((resolve, reject) => {
+          audio.addEventListener('canplaythrough', resolve, { once: true });
+          audio.addEventListener('error', reject, { once: true });
+        });
+        
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+          console.log(`Sound ${soundName} played successfully`);
+        }
+      } catch (e) {
+        console.log(`Sound playback error for ${soundName}:`, e);
+        // Fallback: try to play without waiting
+        try {
+          const fallbackAudio = new Audio(`/sounds/${soundName}.mp3`);
+          fallbackAudio.volume = 0.3;
+          fallbackAudio.play();
+        } catch (fallbackError) {
+          console.log('Fallback sound also failed:', fallbackError);
+        }
+      }
+    };
+
+    // Function to stop worker
+    const stopWorker = async () => {
+      try {
+        // Support both cookie-based auth and token-based auth (for TMA)
+        const token = localStorage.getItem('auth_token');
+        const headers: any = {};
+        
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+        
+        // First check if worker is actually running to avoid unnecessary API calls
+        const statusResponse = await axios.get(`${API_BASE_URL}/workers/status`, {
+          withCredentials: true,
+          headers
+        });
+        
+        if (statusResponse.data.status === 'stopped' || statusResponse.data.status === 'not_configured') {
+          console.log('Worker is already stopped, skipping stop request');
+          return;
+        }
+        
+        await axios.post(`${API_BASE_URL}/workers/stop`, {}, {
+          withCredentials: true,
+          headers
+        });
+        console.log('Worker stopped successfully');
+        // Play stop sound when worker is stopped
+        await playSound('stop');
+      } catch (error: unknown) {
+        console.error('Error stopping worker:', error instanceof Error ? error.message : String(error));
+        // Don't throw error - worker stop is not critical for rule saving
+      }
+    };
+
+    // Function to start worker
+    const startWorker = async () => {
+      try {
+        // Support both cookie-based auth and token-based auth (for TMA)
+        const token = localStorage.getItem('auth_token');
+        const headers: any = {};
+        
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+        
+        // First check if worker is already running to avoid unnecessary API calls
+        const statusResponse = await axios.get(`${API_BASE_URL}/api/workers/status`, {
+          withCredentials: true,
+          headers
+        });
+        
+        if (statusResponse.data.status === 'running' || statusResponse.data.status === 'active') {
+          console.log('Worker is already running, skipping start request');
+          return;
+        }
+        
+        await axios.post(`${API_BASE_URL}/api/workers/start`, {}, {
+          withCredentials: true,
+          headers
+        });
+        console.log('Worker started successfully');
+        // Play work sound when worker is started
+        await playSound('work');
+      } catch (error: unknown) {
+        console.error('Error starting worker:', error instanceof Error ? error.message : String(error));
+        // Don't throw error - worker start failure shouldn't prevent rule creation
+      }
+    };
+
+    const saveRule = async () => {
+      if (savingRule.value) return; // Prevent double submission
+      
+      // Validate channels and model before saving
+      const sourceChannelValue = normalizeChannelForDB(newRule.value.source_channel, subscribedChannels.value);
+      const targetChannelValue = normalizeChannelForDB(newRule.value.target_channel, adminChannels.value);
+      
+      // Check if source channel exists
+      if (!sourceChannelValue) {
+        showError($t('source_channel_required'));
+        savingRule.value = false;
+        return;
+      }
+      
+      // Check if target channel exists
+      if (!targetChannelValue) {
+        showError($t('target_channel_required'));
+        savingRule.value = false;
+        return;
+      }
+      
+      // Check if source channel is still available
+      const sourceChannelExists = subscribedChannels.value.some(c => 
+        getChannelValue(c) === sourceChannelValue);
+      if (!sourceChannelExists) {
+        showError($t('source_channel_no_longer_available'));
+        savingRule.value = false;
+        return;
+      }
+      
+      // Check if target channel is still available
+      const targetChannelExists = adminChannels.value.some(c => 
+        getChannelValue(c) === targetChannelValue);
+      if (!targetChannelExists) {
+        showError($t('target_channel_no_longer_available'));
+        savingRule.value = false;
+        return;
+      }
+      
+      // Check if model exists (if specified)
+      if (newRule.value.model_id) {
+        const modelExists = models.value.some(m => m.id === newRule.value.model_id);
+        if (!modelExists) {
+          showError($t('selected_model_no_longer_available'));
+          savingRule.value = false;
+          return;
+        }
+      }
+      
+      savingRule.value = true;
+      try {
+        // Support both cookie-based auth and token-based auth (for TMA)
+        const token = localStorage.getItem('auth_token');
+        const headers: any = {};
+        
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+        
+        // MODIFIED: Define base path for channel_pairs endpoint
+        const basePath = `${API_BASE_URL}/api/channel_pairs`; 
+        const url = editingRuleId.value
+          ? `${basePath}/${editingRuleId.value}` // URL for PUT
+          : basePath; // URL for POST
+        const method = editingRuleId.value ? 'put' : 'post';
+
+        const payload: Omit<ChannelPairRule, 'id' | 'model_name'> = {
+            source_channel: sourceChannelValue,
+            target_channel: targetChannelValue,
+            text_to_delete: newRule.value.text_to_delete,
+            model_id: newRule.value.model_id,
+            system_content: newRule.value.system_content,
+            max_tokens: newRule.value.model_id ? newRule.value.max_tokens : null,
+            temperature: newRule.value.model_id ? newRule.value.temperature : null,
+            top_p: newRule.value.model_id ? newRule.value.top_p : null,
+            hour_min: newRule.value.hour_min,
+            hour_max: newRule.value.hour_max,
+        };
+
+        console.log('Saving rule with payload:', payload);
+
+        // MODIFIED: Use the defined url and method variables
+        let response;
+        if (method === 'put') {
+          response = await axios.put(url, payload, {
+            withCredentials: true,
+            headers
+          });
+        } else {
+          response = await axios.post(url, payload, {
+            withCredentials: true,
+            headers
+          });
+        }
+
+        console.log('Rule saved successfully:', response.data);
+
+        // Update the rules list immediately with the new/updated rule
+        if (method === 'post') {
+          // For new rules, add to the list
+          rules.value.push(response.data);
+        } else {
+          // For updated rules, replace in the list
+          const index = rules.value.findIndex(r => r.id === editingRuleId.value);
+          if (index !== -1) {
+            rules.value[index] = response.data;
+          }
+        }
+
+        showAddRuleForm.value = false;
+        editingRuleId.value = null;
+        newRule.value = defaultNewRule();
+
+        console.log('Rule saved, managing worker...');
+
+        // 1. Остановим воркер, если он запущен
+        try {
+          console.log('Stopping worker after rule save...');
+          await stopWorker();
+          console.log('Worker stopped successfully');
+        } catch (error: unknown) {
+          console.warn('Worker stop failed after rule save:', error instanceof Error ? error.message : String(error));
+        }
+
+        // 2. Запускаем воркер после сохранения правила
+        try {
+          console.log('Starting worker after rule save...');
+          await startWorker();
+          console.log('Worker started successfully');
+        } catch (error: unknown) {
+          console.warn('Worker start failed after rule save:', error instanceof Error ? error.message : String(error));
+        }
+
+        // 3. Обновляем состояние без перезагрузки страницы
+        setTimeout(async () => {
+          // Обновляем статус воркера
+          // Показываем уведомление об успехе
+          showSuccess($t('rule_created_and_worker_started'));
+        }, 1000);
+      } catch (error: unknown) {
+        console.error('Error saving rule:', error instanceof Error ? error.message : String(error));
+        // Handle error (e.g., show validation errors to the user)
+        alert('Error saving rule. Please try again.');
+      } finally {
+        savingRule.value = false;
+      }
+    };
+
+    // Helper function to get channel value for select options
+    const getChannelValue = (channel: ChannelInfo): string => {
+      if (channel.username) {
+        return channel.username.startsWith('@') ? channel.username : `@${channel.username}`;
+      }
+      return channel.id.toString();
+    };
+
+    // Helper function to get display name for channel (title if available, otherwise ID/username)
+    // Removed local definition since we're now injecting the function from RedesignedApp.vue
+    // const getChannelDisplayName = (channelValue: string | null, channels: ChannelInfo[]): string => {
+    //   if (!channelValue) return 'Не выбран';
+    //   
+    //   // Try to find channel by exact match (username with @)
+    //   let channel = channels.find(c => getChannelValue(c) === channelValue);
+    //   
+    //   // If not found by username, try to find by ID
+    //   if (!channel) {
+    //     const channelId = channelValue.startsWith('@') ? null : parseInt(channelValue);
+    //     if (channelId) {
+    //       channel = channels.find(c => c.id === channelId);
+    //     }
+    //   }
+    //   
+    //   // Return title if found, otherwise return the original value
+    //   if (channel && channel.title) {
+    //     return channel.title;
+    //   }
+    //   
+    //   return channelValue;
+    // };
+
+    // Helper function to normalize channel value from DB to match select options
+    const normalizeChannelValue = (dbValue: string | null, channels: ChannelInfo[]): string | null => {
+      if (!dbValue) return null;
+      
+      console.log('Normalizing channel value:', dbValue, 'against channels:', channels.map(c => ({ 
+        id: c.id, 
+        title: c.title, 
+        username: c.username, 
+        value: getChannelValue(c) 
+      })));
+      
+      // Try to find channel by exact match first (with @)
+      const exactMatch = channels.find(c => getChannelValue(c) === dbValue);
+      if (exactMatch) {
+        console.log('Found exact match:', exactMatch);
+        return dbValue;
+      }
+      
+      // If no exact match, try to find by username (with or without @)
+      const usernameMatch = channels.find(c => {
+        if (!c.username) return false;
+        
+        // Check various combinations
+        const cleanUsername = c.username.replace('@', '');
+        const cleanDbValue = dbValue.replace('@', '');
+        
+        return c.username === dbValue || 
+               `@${c.username}` === dbValue || 
+               c.username === cleanDbValue ||
+               cleanUsername === cleanDbValue;
+      });
+      if (usernameMatch) {
+        const result = getChannelValue(usernameMatch);
+        console.log('Found username match:', usernameMatch, 'returning:', result);
+        return result;
+      }
+      
+      // Try to find by ID
+      const idMatch = channels.find(c => c.id.toString() === dbValue);
+      if (idMatch) {
+        const result = getChannelValue(idMatch);
+        console.log('Found ID match:', idMatch, 'returning:', result);
+        return result;
+      }
+      
+      // Try to find by ID without exact string match (handle type differences)
+      if (dbValue && !isNaN(Number(dbValue))) {
+        const dbId = parseInt(dbValue);
+        const idMatch2 = channels.find(c => c.id === dbId);
+        if (idMatch2) {
+          const result = getChannelValue(idMatch2);
+          console.log('Found ID match (numeric):', idMatch2, 'returning:', result);
+          return result;
+        }
+      }
+      
+      // If no match found but dbValue looks like username without @, add @
+      if (dbValue && !dbValue.startsWith('@') && isNaN(Number(dbValue))) {
+        const result = `@${dbValue}`;
+        console.log('No match found, adding @ prefix:', result);
+        return result;
+      }
+      
+      // If no match found, return original value (don't set to null which causes dropdowns to appear empty)
+      console.log('No match found, returning original value:', dbValue);
+      return dbValue;
+    };
+
+    const editRule = async (ruleToEdit: ChannelPairRule) => {
+        editingRuleId.value = ruleToEdit.id!;
+        
+        console.log('Starting edit rule for:', ruleToEdit);
+        
+        // Show form first to make the loading indicator visible
+        showAddRuleForm.value = true;
+        
+        // Wait for DOM to update so we can scroll to the loading indicator
+        await nextTick();
+        
+        // Scroll to the form first to make it visible
+        setTimeout(() => {
+          const formElement = document.querySelector('.add-rule-form');
+          if (formElement) {
+            formElement.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'start',
+              inline: 'nearest'
+            });
+          }
+        }, 50);
+        
+        // Set a small delay to ensure the form is visible before showing loading
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Always load fresh channels when editing (in case new channels were created)
+        console.log('Loading fresh channels for editing...');
+        await fetchChannels(true); // Force refresh
+        
+        // Store a copy of the channels to prevent reactivity issues
+        const subscribedChannelsCopy = [...subscribedChannels.value];
+        const adminChannelsCopy = [...adminChannels.value];
+        
+        console.log('Available channels after fetch:', {
+          subscribed: subscribedChannelsCopy.map(c => ({ id: c.id, title: c.title, username: c.username, value: getChannelValue(c) })),
+          admin: adminChannelsCopy.map(c => ({ id: c.id, title: c.title, username: c.username, value: getChannelValue(c) }))
+        });
+        
+        // Set rule values with normalized channel values using the copies
+        newRule.value = { 
+          ...ruleToEdit,
+          source_channel: normalizeChannelValue(ruleToEdit.source_channel, subscribedChannelsCopy),
+          target_channel: normalizeChannelValue(ruleToEdit.target_channel, adminChannelsCopy)
+        };
+        
+        console.log('Rule values set to:', {
+          original_source: ruleToEdit.source_channel,
+          normalized_source: newRule.value.source_channel,
+          original_target: ruleToEdit.target_channel,
+          normalized_target: newRule.value.target_channel,
+          model_id: newRule.value.model_id
+        });
+        
+        // Wait for DOM to update after setting the values
+        await nextTick();
+        
+        // Force another DOM update to ensure select elements are properly updated
+        await nextTick();
+        
+        // Add a small delay to ensure dropdowns are populated
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Add additional check to ensure channels are still populated
+        setTimeout(() => {
+          if (subscribedChannels.value.length === 0 && subscribedChannelsCopy.length > 0) {
+            console.log('Restoring subscribed channels from copy');
+            subscribedChannels.value = subscribedChannelsCopy;
+          }
+          if (adminChannels.value.length === 0 && adminChannelsCopy.length > 0) {
+            console.log('Restoring admin channels from copy');
+            adminChannels.value = adminChannelsCopy;
+          }
+        }, 200);
+    };
+
+    const deleteRule = async (id: number) => {
+      if (confirm('Are you sure you want to delete this rule?')) {
+        try {
+          // Support both cookie-based auth and token-based auth (for TMA)
+          const token = localStorage.getItem('auth_token');
+          const headers: any = {};
+          
+          if (token) {
+            headers['Authorization'] = 'Bearer ' + token;
+          }
+          
+          await axios.delete(`${API_BASE_URL}/channel_pairs/${id}`, {
+            withCredentials: true,
+            headers
+          });
+          
+          // Remove rule from local list immediately
+          rules.value = rules.value.filter(rule => rule.id !== id);
+          
+          // Stop worker asynchronously after successful rule deletion
+          stopWorker().catch(error => {
+            console.warn('Worker stop failed after rule deletion:', error);
+          });
+          
+        } catch (error: any) {
+          console.error('Error deleting rule:', error);
+          // If deletion failed, refresh the list to restore correct state
+          await fetchRules();
+        }
+      }
+    };
+
+    onMounted(async () => {
+      console.log('ChannelPairs: Component mounted');
+      // Small delay to ensure authentication tokens are properly set
+      await new Promise(resolve => setTimeout(resolve, 150));
+      
+      // ChannelPairs onMounted: Starting data fetch...
+      console.log('ChannelPairs: Starting data fetch...');
+      fetchRules();
+      fetchModels();
+    });
+
+    // Add a watcher to refetch rules when the component becomes visible
+    watch(() => props.hideMainUI, (newVal, oldVal) => {
+      console.log('ChannelPairs: hideMainUI changed from', oldVal, 'to', newVal);
+      if (!newVal) {
+        // Component is now visible, refetch rules to ensure data is up to date
+        console.log('ChannelPairs: Component now visible, refreshing data');
+        fetchRules();
+        fetchModels();
+      }
+    });
+
+    // Add a watcher for when the component is shown/hidden to ensure proper data handling
+    watch(() => props.hideMainUI, (newVal, oldVal) => {
+      console.log('ChannelPairs: hideMainUI watcher triggered', { oldVal, newVal });
+      if (oldVal === true && newVal === false) {
+        // Component is being shown, ensure data is fresh
+        console.log('ChannelPairs: Component being shown, refreshing data');
+        fetchRules();
+        fetchModels();
+      }
+    }, { immediate: true });
+
+    // Watch rules changes to debug rendering issues
+    watch(() => rules.value, (newRules) => {
+      console.log('ChannelPairs: Rules updated', newRules);
+      console.log('ChannelPairs: Rules length', newRules.length);
+      if (newRules.length > 0) {
+        console.log('ChannelPairs: First rule details', newRules[0]);
+      }
+    }, { deep: true });
+
+    const toggleAddRuleForm = async () => {
+      if (!showAddRuleForm.value) {
+        // Opening the form - load fresh channels
+        await fetchChannels(true); // Force refresh
+        showAddRuleForm.value = true;
+        
+        // Wait for DOM to update and then scroll to form
+        await nextTick();
+        setTimeout(() => {
+          const formElement = document.querySelector('.add-rule-form');
+          if (formElement) {
+            formElement.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'start',
+              inline: 'nearest'
+            });
+          }
+        }, 100);
+      } else {
+        // Closing the form
+        showAddRuleForm.value = false;
+        editingRuleId.value = null;
+        newRule.value = defaultNewRule();
+      }
+    };
+
+    const openRuleWizard = () => {
+      editingRuleForWizard.value = null;
+      showRuleWizard.value = true;
+    };
+
+    // Provide the openRuleWizard method so it can be accessed by child components
+    provide('openRuleWizard', openRuleWizard);
+
+    const closeRuleWizard = () => {
+      showRuleWizard.value = false;
+      editingRuleForWizard.value = null;
+    };
+
+    const saveRuleFromWizard = async (ruleData: ChannelPairRule) => {
+      try {
+        // Support both cookie-based auth and token-based auth (for TMA)
+        const token = localStorage.getItem('auth_token');
+        const headers: any = {};
+        
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+        
+        const method = ruleData.id ? 'put' : 'post';
+        const url = ruleData.id 
+          ? `${API_BASE_URL}/api/channel_pairs/${ruleData.id}`
+          : `${API_BASE_URL}/api/channel_pairs`;
+        
+        const payload = {
+          ...ruleData,
+          source_channel: normalizeChannelForDB(ruleData.source_channel, subscribedChannels.value),
+          target_channel: normalizeChannelForDB(ruleData.target_channel, adminChannels.value)
+        };
+        
+        const response = await axios[method](url, payload, {
+          withCredentials: true,
+          headers
+        });
+        
+        // Update local rules list
+        if (method === 'post') {
+          rules.value.push(response.data);
+        } else {
+          const index = rules.value.findIndex(r => r.id === ruleData.id);
+          if (index !== -1) {
+            rules.value[index] = response.data;
+          }
+        }
+        
+        closeRuleWizard();
+        showSuccess($t('rule_saved_successfully'));
+        
+        // Manage worker after rule save
+        try {
+          await stopWorker();
+          await startWorker();
+        } catch (workerError) {
+          console.warn('Worker management failed after rule save:', workerError);
+        }
+      } catch (error: any) {
+        console.error('Error saving rule from wizard:', error);
+        showError($t('error_saving_rule') + ': ' + (error.response?.data?.detail || error.message));
+      }
+    };
+
+    const handleRuleCreatedSuccessfully = () => {
+      // Emit event to parent component
+      emit('rule-created-successfully');
+      
+      // Refresh rules list
+      fetchRules();
+      
+      // Close wizard
+      closeRuleWizard();
+    };
+
+    const refreshChannels = async () => {
+      await fetchChannels(true); // Force refresh
+      showSuccess($t('channels_refreshed'));
+    };
+
+    const toggleCreateChannelForm = () => {
+      showCreateChannelForm.value = !showCreateChannelForm.value;
+      if (!showCreateChannelForm.value) {
+        // Reset form when closing
+        newChannel.value = {
+          title: '',
+          description: '',
+          is_megagroup: false
+        };
+      }
+    };
+
+    const createChannel = async () => {
+      if (creatingChannel.value) return;
+      
+      creatingChannel.value = true;
+      try {
+        // Support both cookie-based auth and token-based auth (for TMA)
+        const token = localStorage.getItem('auth_token');
+        const headers: any = {};
+        
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+        
+        const response = await axios.post(`${API_BASE_URL}/channels/create`, newChannel.value, {
+          withCredentials: true,
+          headers
+        });
+        
+        showSuccess($t('channel_created_successfully'));
+        
+        // Reset form
+        newChannel.value = {
+          title: '',
+          description: '',
+          is_megagroup: false
+        };
+        
+        // Hide form
+        showCreateChannelForm.value = false;
+        
+        // Refresh channels
+        await fetchChannels(true);
+      } catch (error: any) {
+        console.error('Error creating channel:', error);
+        showError($t('error_creating_channel') + ': ' + (error.response?.data?.detail || error.message));
+      } finally {
+        creatingChannel.value = false;
+      }
+    };
+
+    const toggleAdvancedSettings = (ruleId: number) => {
+      showAdvanced.value = {
+        ...showAdvanced.value,
+        [ruleId]: !showAdvanced.value[ruleId]
+      };
+    };
+
+    // Watch for preloaded channels changes
+    watch(() => props.preloadedChannels, (newChannels) => {
+      // Only update channels if the form is not currently being used for editing
+      if (props.channelsLoaded && newChannels && !showAddRuleForm.value) {
+        subscribedChannels.value = newChannels.subscribed;
+        adminChannels.value = newChannels.admin;
+        channelsLoaded.value = true;
+      }
+    }, { deep: true });
+
+    // Expose methods for parent components
+    defineExpose({
+      fetchRules,
+      fetchChannels,
+      refreshChannels,
+      openRuleWizard
+    });
+
+    return {
+      rules,
+      models,
+      showAddRuleForm,
+      editingRuleId,
+      subscribedChannels,
+      adminChannels,
+      loadingChannels,
+      channelsLoaded,
+      savingRule,
+      expandedRules,
+      showAdvanced,
+      newRule,
+      showCreateChannelForm,
+      creatingChannel,
+      newChannel,
+      showRuleWizard,
+      editingRuleForWizard,
+      showProgress,
+      progressSteps,
+      getRowClass,
+      getChannelValue,
+      getChannelDisplayName,
+      fetchRules,
+      fetchModels,
+      fetchChannels,
+      onModelChange,
+      saveRule,
+      editRule,
+      deleteRule,
+      toggleAddRuleForm,
+      openRuleWizard,
+      closeRuleWizard,
+      saveRuleFromWizard,
+      handleRuleCreatedSuccessfully,
+      refreshChannels,
+      toggleCreateChannelForm,
+      createChannel,
+      toggleAdvancedSettings
+    };
+  }
+});
+</script>
+
+<style scoped>/* ... existing styles ... */
+.action-btn .icon {
+    width: 16px !important;
+    height: 16px !important;
+  }
+.theme-dark .channel-pairs-container::after,
+.tma-dark-theme .channel-pairs-container::after {
+  background: radial-gradient(circle at bottom right, rgba(45, 212, 191, 0.24), transparent 65%);
+}
+
+.theme-dark .channel-pairs-title,
+.tma-dark-theme .channel-pairs-title {
+  color: #f8fafc;
+  text-shadow: 0 22px 38px rgba(37, 99, 235, 0.45);
+}
+
+.theme-dark .debug-tag,
+.tma-dark-theme .debug-tag {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(59, 130, 246, 0.35);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.32);
+}
+
+.theme-dark .rule-card,
+.tma-dark-theme .rule-card {
+  background: linear-gradient(150deg, rgba(30, 41, 59, 0.94), rgba(30, 27, 75, 0.88));
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  box-shadow: 0 26px 46px rgba(15, 23, 42, 0.6);
+}
+
+.theme-dark .rule-card:hover,
+.tma-dark-theme .rule-card:hover {
+  box-shadow: 0 32px 52px rgba(15, 23, 42, 0.72);
+}
+
+.theme-dark .rule-number,
+.tma-dark-theme .rule-number {
+  -webkit-text-fill-color: transparent;
+}
+
+.theme-dark .action-btn,
+.tma-dark-theme .action-btn {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.22);
+  color: #c7d2fe;
+}
+
+.theme-dark .action-btn:hover,
+.tma-dark-theme .action-btn:hover {
+  box-shadow: 0 16px 26px rgba(79, 70, 229, 0.42);
+}
+
+.theme-dark .action-btn.delete-btn,
+.tma-dark-theme .action-btn.delete-btn {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.28);
+  color: #fecaca;
+}
+
+.theme-dark .channel-flow,
+.tma-dark-theme .channel-flow {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.theme-dark .channel-info .channel-name,
+.tma-dark-theme .channel-info .channel-name {
+  color: #f1f5f9;
+}
+
+.theme-dark .channel-info.source .channel-name,
+.tma-dark-theme .channel-info.source .channel-name {
+  color: #c7d2fe;
+}
+
+.theme-dark .channel-info.target .channel-name,
+.tma-dark-theme .channel-info.target .channel-name {
+  color: #5eead4;
+}
+
+.theme-dark .channel-label,
+.tma-dark-theme .channel-label {
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.theme-dark .flow-arrow,
+.tma-dark-theme .flow-arrow {
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.theme-dark .processing-rule,
+.tma-dark-theme .processing-rule {
+  background: rgba(79, 70, 229, 0.2);
+  border-color: rgba(129, 140, 248, 0.35);
+}
+
+.theme-dark .rule-text,
+.tma-dark-theme .rule-text {
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.theme-dark .tag,
+.tma-dark-theme .tag {
+  background: rgba(30, 41, 59, 0.65);
+  border-color: rgba(99, 102, 241, 0.28);
+  color: #e2e8f0;
+}
+
+.theme-dark .model-tag,
+.tma-dark-theme .model-tag {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.35), rgba(124, 58, 237, 0.28));
+  color: #c7d2fe;
+}
+
+.theme-dark .delete-tag,
+.tma-dark-theme .delete-tag {
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.3), rgba(251, 191, 36, 0.24));
+  color: #fecaca;
+}
+
+.theme-dark .time-tag,
+.tma-dark-theme .time-tag {
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.26), rgba(34, 197, 94, 0.22));
+  color: #a7f3d0;
+}
+
+.theme-dark .advanced-toggle,
+.tma-dark-theme .advanced-toggle {
+  background: rgba(79, 70, 229, 0.2);
+  border-color: rgba(129, 140, 248, 0.35);
+  color: #c7d2fe;
+}
+
+.theme-dark .advanced-content,
+.tma-dark-theme .advanced-content {
+  background: rgba(15, 23, 42, 0.68);
+  border-color: rgba(129, 140, 248, 0.28);
+}
+
+.theme-dark .param-label,
+.tma-dark-theme .param-label {
+  color: rgba(148, 163, 184, 0.88);
+}
+
+.theme-dark .param-value,
+.tma-dark-theme .param-value {
+  color: #c7d2fe;
+}
+
+.theme-dark .add-rule-section,
+.tma-dark-theme .add-rule-section {
+  background: radial-gradient(circle at top left, rgba(30, 27, 75, 0.72), rgba(17, 24, 39, 0.88));
+  border-color: rgba(148, 163, 184, 0.26);
+  box-shadow: 0 22px 36px rgba(15, 23, 42, 0.6);
+}
+
+.theme-dark .classic-form-btn,
+.tma-dark-theme .classic-form-btn,
+.theme-dark .create-channel-btn,
+.tma-dark-theme .create-channel-btn {
+  background: rgba(15, 23, 42, 0.75);
+  border-color: rgba(148, 163, 184, 0.32);
+  color: #e2e8f0;
+}
+
+.theme-dark .classic-form-btn:hover,
+.tma-dark-theme .classic-form-btn:hover,
+.theme-dark .create-channel-btn:hover,
+.tma-dark-theme .create-channel-btn:hover {
+  background: rgba(30, 41, 59, 0.92);
+  box-shadow: 0 14px 24px rgba(15, 23, 42, 0.55);
+}
+
+.theme-dark .loading-indicator,
+.tma-dark-theme .loading-indicator {
+  background: rgba(15, 23, 42, 0.72);
+  border-color: rgba(56, 189, 248, 0.32);
+  color: #e0f2fe;
+}
+
+.theme-dark .spinner,
+.tma-dark-theme .spinner {
+  border: 3px solid rgba(51, 65, 85, 0.6);
+  border-top-color: rgba(129, 140, 248, 0.9);
+}
+
+.theme-dark .add-rule-form,
+.tma-dark-theme .add-rule-form {
+  background: rgba(15, 23, 42, 0.82);
+  border-color: rgba(51, 65, 85, 0.45);
+}
+
+.theme-dark .channel-field label,
+.tma-dark-theme .channel-field label,
+.theme-dark .create-channel-form label,
+.tma-dark-theme .create-channel-form label {
+  color: #e2e8f0;
+}
+
+.theme-dark .add-rule-form input,
+.tma-dark-theme .add-rule-form input,
+.theme-dark .add-rule-form textarea,
+.tma-dark-theme .add-rule-form textarea,
+.theme-dark .add-rule-form select,
+.tma-dark-theme .add-rule-form select,
+.theme-dark .create-channel-form input,
+.tma-dark-theme .create-channel-form input,
+.theme-dark .create-channel-form textarea,
+.tma-dark-theme .create-channel-form textarea {
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(79, 70, 229, 0.36);
+  color: #f8fafc;
+}
+
+.theme-dark .add-rule-form input:focus,
+.tma-dark-theme .add-rule-form input:focus,
+.theme-dark .add-rule-form textarea:focus,
+.tma-dark-theme .add-rule-form textarea:focus,
+.theme-dark .add-rule-form select:focus,
+.tma-dark-theme .add-rule-form select:focus,
+.theme-dark .create-channel-form input:focus,
+.tma-dark-theme .create-channel-form input:focus,
+.theme-dark .create-channel-form textarea:focus,
+.tma-dark-theme .create-channel-form textarea:focus {
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.28);
+}
+
+.theme-dark .hour-range-single-line,
+.tma-dark-theme .hour-range-single-line {
+  background: rgba(15, 23, 42, 0.68);
+  border-color: rgba(79, 70, 229, 0.35);
+  color: #cbd5f5;
+}
+
+.theme-dark .hour-range-single-line input,
+.tma-dark-theme .hour-range-single-line input {
+  background: rgba(15, 23, 42, 0.92);
+  border-color: rgba(79, 70, 229, 0.36);
+  color: #f8fafc;
+}
+
+.theme-dark .checkbox-field,
+.tma-dark-theme .checkbox-field {
+  color: #e2e8f0;
+}
+
+.theme-dark .save-button,
+.tma-dark-theme .save-button,
+.theme-dark .create-button,
+.tma-dark-theme .create-button {
+  box-shadow: 0 24px 44px rgba(15, 23, 42, 0.65);
+}
+
+.theme-dark .validation-hint,
+.tma-dark-theme .validation-hint {
+  color: rgba(248, 113, 113, 0.85);
+}
+
+.theme-dark .validation-hint.warning,
+.tma-dark-theme .validation-hint.warning {
+  color: rgba(251, 191, 36, 0.85);
+}
+.theme-dark .rule-card-header,
+.tma-dark-theme .rule-card-header {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.78), rgba(30, 27, 75, 0.72));
+  border-bottom: 1px dashed rgba(129, 140, 248, 0.32);
+  box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.18);
+}
+
+.theme-dark .rules-list th,
+.tma-dark-theme .rules-list th {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.88), rgba(55, 48, 163, 0.72));
+  border-bottom: 2px solid rgba(129, 140, 248, 0.38);
+  color: #c7d2fe;
+}
+
+.theme-dark .rules-list td,
+.tma-dark-theme .rules-list td {
+  border-color: rgba(71, 85, 105, 0.5);
+  color: #e2e8f0;
+}
+
+.theme-dark .row-even,
+.tma-dark-theme .row-even {
+  background: rgba(30, 41, 59, 0.65);
+}
+
+.theme-dark .row-odd,
+.tma-dark-theme .row-odd {
+  background: rgba(30, 27, 75, 0.6);
+}
+.channel-pairs-container.hidden-ui {
+  display: none;
+}
+
+.channel-pairs-container.hidden-ui .rule-wizard-overlay,
+.channel-pairs-container.hidden-ui .modal-overlay {
+  display: flex !important;
+}
+
+.channel-pairs-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 28px;
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  text-shadow: 0 16px 34px rgba(99, 102, 241, 0.22), 0 10px 24px rgba(34, 211, 238, 0.16);
+}
+
+.debug-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1d4ed8;
+  background: linear-gradient(145deg, rgba(191, 219, 254, 0.7), rgba(233, 231, 255, 0.8));
+  border: 1px solid rgba(99, 102, 241, 0.32);
+  border-radius: 999px;
+  box-shadow: 0 12px 22px rgba(99, 102, 241, 0.18);
+}
+
+.rules-list table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+
+.button-edit {
+  background-color: green;
+  color: white;
+  padding: 8px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  margin-right: 5px;
+}
+
+.button-edit:hover {
+  background-color: #006400;
+}
+
+.button-delete {
+  background-color: red;
+  color: white;
+  padding: 8px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.button-delete:hover {
+  background-color: #cc0000;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+}
+
+.form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.form-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.refresh-channels-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  color: var(--cp-primary);
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.refresh-channels-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.14), rgba(139, 92, 246, 0.14));
+}
+
+.refresh-channels-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.refresh-channels-btn .spinning {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.add-rule-form .channel-fields {
+  display: grid;
+  gap: 18px;
+}
+
+.hour-range-field {
+  margin-top: 4px;
+}
+
+.hour-range-single-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(226, 232, 240, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  color: #0f172a;
+}
+
+.hour-range-single-line input {
+  width: 64px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.92);
+  color: #0f172a;
+}
+
+.hour-range-single-line input:focus {
+  outline: none;
+  border-color: var(--cp-primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+}
+
+.hour-range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.add-rule-form .model-settings {
+  display: grid;
+  gap: 20px;
+  margin-top: 10px;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.65fr);
+}
+
+.system-content,
+.model-params {
+  background: linear-gradient(150deg, rgba(244, 247, 255, 0.92), rgba(224, 242, 254, 0.9));
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.system-content textarea {
+  height: 200px;
+  resize: vertical;
+  width: 100%;
+}
+
+.model-params {
+  display: grid;
+  gap: 12px;
+}
+
+.model-params > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rules-list th,
+.rules-list td {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.rules-list th {
+  background: linear-gradient(135deg, rgba(224, 242, 254, 0.9), rgba(233, 231, 255, 0.88));
+  border-bottom: 2px solid rgba(99, 102, 241, 0.35);
+  font-size: 11px;
+  color: #1d4ed8;
+}
+
+.rules-list tbody tr {
+  border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.row-even {
+  background: rgba(224, 242, 254, 0.45);
+}
+
+.row-odd {
+  background: rgba(233, 231, 255, 0.45);
+}
+
+.rules-list {
+  margin-bottom: 32px;
+}
+
+.rules-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+  margin-bottom: 30px;
+}
+
+
+.rule-card {
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  border-radius: 22px;
+  padding: 26px;
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.98), rgba(224, 231, 255, 0.95), rgba(204, 251, 241, 0.9));
+  box-shadow: 0 28px 44px rgba(99, 102, 241, 0.2), 0 18px 30px rgba(34, 211, 238, 0.14);
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+
+.rule-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 34px 56px rgba(79, 70, 229, 0.24), 0 22px 38px rgba(34, 211, 238, 0.18);
+}
+
+.rule-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin: -6px -6px 18px;
+  padding: 18px;
+  border-bottom: 1px dashed rgba(99, 102, 241, 0.28);
+  background: linear-gradient(135deg, rgba(244, 247, 255, 0.6), rgba(233, 231, 255, 0.48));
+  border-radius: 18px;
+}
+
+.rule-info-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.rule-number {
+  font-weight: 700;
+  font-size: 18px;
+  background: linear-gradient(135deg, var(--cp-primary), var(--cp-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.rule-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.action-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(99, 102, 241, 0.32);
+  background: linear-gradient(145deg, rgba(99, 102, 241, 0.16), rgba(139, 92, 246, 0.16));
+  color: var(--cp-primary);
+  cursor: pointer;
+  transition: transform 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+}
+
+.action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 26px rgba(99, 102, 241, 0.32);
+  background: linear-gradient(145deg, rgba(99, 102, 241, 0.24), rgba(139, 92, 246, 0.24));
+}
+
+.action-btn.delete-btn {
+  background: linear-gradient(145deg, rgba(248, 113, 113, 0.16), rgba(251, 191, 36, 0.16));
+  border-color: rgba(248, 113, 113, 0.32);
+  color: var(--cp-danger);
+}
+
+.action-btn.delete-btn:hover {
+  box-shadow: 0 16px 24px rgba(248, 113, 113, 0.32);
+  background: linear-gradient(145deg, rgba(248, 113, 113, 0.26), rgba(251, 191, 36, 0.22));
+}
+
+.channel-flow {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 10px;
+  padding: 14px 18px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(224, 242, 254, 0.72), rgba(233, 231, 255, 0.68));
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.channel-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.channel-label {
+  font-size: 12px;
+  color: rgba(14, 116, 144, 0.9);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.channel-name {
+  font-weight: 600;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #1f2937;
+}
+
+.channel-info.source .channel-name {
+  color: #4338ca;
+}
+
+.channel-info.target .channel-name {
+  color: #0f766e;
+}
+
+.flow-arrow {
+  color: rgba(59, 130, 246, 0.6);
+}
+
+.rule-content {
+  margin-top: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.processing-rule {
+  margin-bottom: 0;
+  padding: 18px;
+  background: linear-gradient(135deg, rgba(224, 231, 255, 0.6), rgba(204, 251, 241, 0.58));
+  border-radius: 18px;
+  border: 1px solid rgba(99, 102, 241, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.rule-label {
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: #4338ca;
+  letter-spacing: 0.02em;
+}
+
+.rule-text {
+  font-style: italic;
+  color: rgba(30, 64, 175, 0.85);
+}
+
+.rule-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  background: linear-gradient(145deg, rgba(244, 247, 255, 0.8), rgba(224, 242, 254, 0.78));
+  color: #0f172a;
+  box-shadow: 0 12px 20px rgba(99, 102, 241, 0.12);
+}
+
+.tag-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.model-tag {
+  background: linear-gradient(145deg, rgba(99, 102, 241, 0.22), rgba(139, 92, 246, 0.22));
+  border-color: rgba(99, 102, 241, 0.35);
+  color: #312e81;
+}
+
+.delete-tag {
+  background: linear-gradient(145deg, rgba(248, 113, 113, 0.24), rgba(251, 191, 36, 0.22));
+  border-color: rgba(248, 113, 113, 0.34);
+  color: #7f1d1d;
+}
+
+.time-tag {
+  background: linear-gradient(145deg, rgba(34, 211, 238, 0.22), rgba(45, 212, 191, 0.22));
+  border-color: rgba(45, 212, 191, 0.34);
+  color: #075985;
+}
+
+.advanced-settings {
+  margin-top: 15px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.35);
+}
+
+.advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(145deg, rgba(99, 102, 241, 0.16), rgba(139, 92, 246, 0.16));
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: #312e81;
+  cursor: pointer;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 999px;
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+
+.advanced-toggle:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 26px rgba(99, 102, 241, 0.26);
+}
+
+.toggle-icon {
+  transition: transform 0.3s ease;
+  width: 18px;
+  height: 18px;
+}
+
+.toggle-icon.rotated {
+  transform: rotate(180deg);
+}
+
+.advanced-content {
+  margin-top: 14px;
+  padding: 16px;
+  background: linear-gradient(145deg, rgba(236, 254, 255, 0.6), rgba(224, 242, 254, 0.58));
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.param-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px;
+}
+
+.param-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #1f2937;
+}
+
+.param-label {
+  font-size: 12px;
+  color: rgba(30, 64, 175, 0.8);
+  margin-bottom: 0;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.param-value {
+  font-weight: 600;
+  color: #4338ca;
+}
+
+.add-rule-section {
+  margin-top: 32px;
+  padding: 30px;
+  border-radius: 26px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.95), rgba(233, 231, 255, 0.9), rgba(219, 251, 252, 0.88));
+  box-shadow: 0 24px 44px rgba(148, 163, 184, 0.24), 0 18px 32px rgba(34, 211, 238, 0.18);
+}
+
+.action-buttons {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.wizard-btn {
+  background: linear-gradient(135deg, var(--cp-primary), var(--cp-secondary));
+  color: #fff;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 16px 32px rgba(99, 102, 241, 0.28);
+}
+
+.wizard-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 22px 40px rgba(99, 102, 241, 0.35);
+}
+
+.classic-form-btn,
+.create-channel-btn {
+  background: linear-gradient(145deg, rgba(244, 247, 255, 0.9), rgba(224, 242, 254, 0.88));
+  color: #1d4ed8;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  padding: 12px 24px;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  box-shadow: 0 14px 24px rgba(99, 102, 241, 0.16);
+}
+
+.classic-form-btn:hover,
+.create-channel-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 28px rgba(99, 102, 241, 0.22);
+}
+
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 12px 18px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(224, 242, 254, 0.78), rgba(191, 219, 254, 0.75));
+  border: 1px solid rgba(59, 130, 246, 0.32);
+  color: #0f172a;
+  box-shadow: 0 14px 24px rgba(59, 130, 246, 0.18);
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgba(191, 219, 254, 0.6);
+  border-top: 3px solid rgba(37, 99, 235, 0.85);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.add-rule-form {
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.95), rgba(236, 254, 255, 0.9));
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 20px;
+  padding: 26px;
+  margin-bottom: 22px;
+  display: grid;
+  gap: 18px;
+  box-shadow: 0 20px 32px rgba(148, 163, 184, 0.2);
+}
+
+.channel-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.channel-field label {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.channel-field select {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 12px;
+  font-size: 14px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(233, 231, 255, 0.9));
+  color: #0f172a;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.channel-field select:focus {
+  outline: none;
+  border-color: var(--cp-primary);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.18);
+}
+
+.channel-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.channel-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+.add-rule-form input,
+.add-rule-form textarea,
+.add-rule-form select {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 12px;
+  font-size: 14px;
+  box-sizing: border-box;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(224, 242, 254, 0.9));
+  color: #0f172a;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.add-rule-form input:focus,
+.add-rule-form textarea:focus,
+.add-rule-form select:focus {
+  outline: none;
+  border-color: var(--cp-primary);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.18);
+}
+
+.add-rule-form textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+
+.checkbox-field {
+  margin: 15px 0;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.checkbox-field label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.checkbox-field input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--cp-primary);
+}
+
+.save-button,
+.create-button {
+  background: linear-gradient(135deg, var(--cp-primary), var(--cp-secondary));
+  color: #fff;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 18px 32px rgba(99, 102, 241, 0.28);
+}
+
+.save-button:hover,
+.create-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 24px 38px rgba(99, 102, 241, 0.32);
+}
+
+.save-button:disabled,
+.create-button:disabled {
+  background: rgba(148, 163, 184, 0.6);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.button-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-top: 2px solid rgba(255, 255, 255, 1);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.create-channel-form {
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.95), rgba(233, 231, 255, 0.92));
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 20px;
+  padding: 22px;
+  margin-top: 22px;
+  display: grid;
+  gap: 18px;
+  box-shadow: 0 18px 30px rgba(148, 163, 184, 0.22);
+}
+
+.create-channel-form label {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.create-channel-form input,
+.create-channel-form textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(233, 231, 255, 0.9));
+  color: #0f172a;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.create-channel-form input:focus,
+.create-channel-form textarea:focus {
+  outline: none;
+  border-color: var(--cp-primary);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.18);
+}
+
+.validation-hint {
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(217, 70, 239, 0.85);
+}
+
+.validation-hint.warning {
+  color: rgba(250, 204, 21, 0.88);
+}
+
+@media (max-width: 1024px) {
+  .channel-flow {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .add-rule-form .model-settings {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .channel-pairs-container {
+    padding: 24px 20px;
+  }
+
+  .channel-pairs-title {
+    font-size: 24px;
+  }
+
+  .rule-card {
+    padding: 20px;
+  }
+
+  .rule-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .channel-flow {
+    width: 100%;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .wizard-btn,
+  .classic-form-btn,
+  .create-channel-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .add-rule-form {
+    padding: 20px;
+  }
+
+  .add-rule-form .model-settings {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .channel-pairs-container {
+    padding: 18px 16px;
+    border-radius: 20px;
+  }
+
+  .channel-flow {
+    padding: 10px 12px;
+  }
+
+  .channel-info {
+    min-width: unset;
+  }
+
+  .channel-name {
+    max-width: 100%;
+  }
+
+  .rule-tags {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .action-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .action-btn .icon {
+    width: 16px !important;
+    height: 16px !important;
+  }
+}
+
+</style>

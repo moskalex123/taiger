@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UI Redesign Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .debug-info { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .status { padding: 5px 10px; border-radius: 3px; margin: 5px 0; }
+        .enabled { background: #d4edda; color: #155724; }
+        .disabled { background: #f8d7da; color: #721c24; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>UI Redesign Debug Information</h1>
+    
+    <div class="debug-info">
+        <h3>Environment Variables:</h3>
+        <p><strong>VITE_ENABLE_REDESIGN:</strong> <span id="env-var">Loading...</span></p>
+        <p><strong>All Environment Variables:</strong> <span id="all-env">Loading...</span></p>
+    </div>
+    
+    <div class="debug-info">
+        <h3>localStorage Settings:</h3>
+        <p><strong>enable_redesigned_ui:</strong> <span id="local-storage">Loading...</span></p>
+    </div>
+    
+    <div class="debug-info">
+        <h3>Current Status:</h3>
+        <div id="redesign-status" class="status">Loading...</div>
+    </div>
+    
+    <div class="debug-info">
+        <h3>Actions:</h3>
+        <button onclick="enableRedesign()">Enable Redesign (localStorage)</button>
+        <button onclick="disableRedesign()">Disable Redesign (localStorage)</button>
+        <button onclick="clearRedesign()">Clear localStorage Setting</button>
+        <button onclick="refresh()">Refresh Page</button>
+    </div>
+    
+    <div class="debug-info">
+        <h3>App Links:</h3>
+        <p><a href="http://localhost:5174/" target="_blank">Open Main App (localhost:5174)</a></p>
+        <p><a href="https://tactically-healing-parrotfish.cloudpub.ru/" target="_blank">Open Production App</a></p>
+    </div>
+
+    <script>
+        // Debug functions
+        function updateDebugInfo() {
+            // Environment variable
+            const envVar = import.meta?.env?.VITE_ENABLE_REDESIGN || 'undefined';
+            document.getElementById('env-var').textContent = envVar;
+            
+            // All environment variables
+            const allEnv = import.meta?.env ? JSON.stringify(import.meta.env, null, 2) : 'undefined';
+            document.getElementById('all-env').textContent = allEnv;
+            
+            // localStorage
+            const localStorage = window.localStorage.getItem('enable_redesigned_ui') || 'not set';
+            document.getElementById('local-storage').textContent = localStorage;
+            
+            // Current status
+            const isRedesignEnabled = checkRedesignStatus();
+            const statusEl = document.getElementById('redesign-status');
+            statusEl.textContent = isRedesignEnabled ? 'ENABLED - New UI should be shown' : 'DISABLED - Old UI should be shown';
+            statusEl.className = isRedesignEnabled ? 'status enabled' : 'status disabled';
+        }
+        
+        function checkRedesignStatus() {
+            // Environment variable check
+            const envSetting = import.meta?.env?.VITE_ENABLE_REDESIGN || 'false';
+            if (envSetting.toLowerCase() === 'true') return true;
+            
+            // localStorage check
+            const userPreference = localStorage.getItem('enable_redesigned_ui');
+            if (userPreference !== null) {
+                return userPreference === 'true';
+            }
+            
+            return false;
+        }
+        
+        function enableRedesign() {
+            localStorage.setItem('enable_redesigned_ui', 'true');
+            updateDebugInfo();
+            alert('Redesign enabled via localStorage. Refresh the main app to see changes.');
+        }
+        
+        function disableRedesign() {
+            localStorage.setItem('enable_redesigned_ui', 'false');
+            updateDebugInfo();
+            alert('Redesign disabled via localStorage. Refresh the main app to see changes.');
+        }
+        
+        function clearRedesign() {
+            localStorage.removeItem('enable_redesigned_ui');
+            updateDebugInfo();
+            alert('localStorage setting cleared. Environment variable setting will be used.');
+        }
+        
+        function refresh() {
+            window.location.reload();
+        }
+        
+        // Initialize
+        updateDebugInfo();
+        
+        // Auto-refresh every 2 seconds
+        setInterval(updateDebugInfo, 2000);
+        
+        console.log('Debug info:', {
+            env: import.meta?.env,
+            localStorage: localStorage.getItem('enable_redesigned_ui'),
+            redesignEnabled: checkRedesignStatus()
+        });
+    </script>
+</body>
+</html>

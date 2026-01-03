@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+    <div id="status">Connecting...</div>
+    <div id="messages"></div>
+    
+    <script>
+        // Simple WebSocket test
+        const userId = 1; // Test user ID
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
+        const wsUrl = `${protocol}//${host}/api/ws/${userId}`;
+        
+        document.getElementById('status').textContent = `Connecting to: ${wsUrl}`;
+        
+        const websocket = new WebSocket(wsUrl);
+        
+        websocket.onopen = function(event) {
+            document.getElementById('status').textContent = 'Connected!';
+            console.log('WebSocket connected');
+        };
+        
+        websocket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.textContent = JSON.stringify(data, null, 2);
+            messagesDiv.appendChild(messageDiv);
+            console.log('Received:', data);
+        };
+        
+        websocket.onclose = function(event) {
+            document.getElementById('status').textContent = 'Disconnected';
+            console.log('WebSocket disconnected');
+        };
+        
+        websocket.onerror = function(error) {
+            document.getElementById('status').textContent = 'Error: ' + error;
+            console.error('WebSocket error:', error);
+        };
+        
+        // Send a test log after 2 seconds
+        setTimeout(() => {
+            fetch('/api/internal/log', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    user_id: userId,
+                    log_type: 'test',
+                    message: 'Frontend test message',
+                    level: 'info',
+                    timestamp: new Date().toISOString()
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Log sent:', data);
+            })
+            .catch(error => {
+                console.error('Error sending log:', error);
+            });
+        }, 2000);
+    </script>
+</body>
+</html>
