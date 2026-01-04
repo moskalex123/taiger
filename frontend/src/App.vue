@@ -573,6 +573,24 @@ const initializeAuthState = async () => {
   } finally {
     // Finish loading regardless of outcome
     isLoading.value = false;
+
+    // Initialize language service after authentication check
+    try {
+      const languageService = (await import('./services/language')).LanguageService.getInstance();
+      const apiLanguage = await languageService.getUserLanguage();
+      console.log('🎯 App.vue: Language service initialized with language:', apiLanguage);
+
+      // Update i18n if API returned a different language
+      if (apiLanguage && apiLanguage !== locale.value) {
+        console.log('🎯 App.vue: Updating i18n locale to:', apiLanguage);
+        locale.value = apiLanguage as 'en' | 'ru';
+        const localizationService = (await import('./services/localization')).LocalizationService.getInstance();
+        localizationService.setLanguage(apiLanguage);
+      }
+    } catch (error) {
+      console.error('🎯 App.vue: Error initializing language service:', error);
+    }
+
     // Initialize redesigned UI data when authenticated
     if (isAuth.value) {
       await initializeRedesignedUIData();

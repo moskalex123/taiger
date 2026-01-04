@@ -20,7 +20,15 @@ export class LanguageService {
       this.currentLanguage = response.data.language_code;
       console.log('🎯 LanguageService: Got user language from API:', this.currentLanguage);
       return this.currentLanguage;
-    } catch (error) {
+    } catch (error: any) {
+      // Check if it's an authentication error (401)
+      if (error.response?.status === 401) {
+        console.log('🎯 LanguageService: User not authenticated, using browser language');
+        // Fallback to browser language or English for unauthenticated users
+        const browserLang = navigator.language?.split('-')[0] || 'en';
+        console.log('🎯 LanguageService: Using browser language as fallback:', browserLang);
+        return browserLang;
+      }
       console.error('Failed to get user language:', error);
       // Fallback to browser language or English
       const browserLang = navigator.language?.split('-')[0] || 'en';
