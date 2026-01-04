@@ -58,17 +58,17 @@ api.interceptors.response.use(
           }
         } catch (refreshError) {
           console.error('Token refresh failed:', refreshError);
-          // Redirect to login or show error
+          // For TMA, don't redirect - let the app handle authentication state
           localStorage.removeItem('auth_token');
-          window.location.href = '/login';
+          // Don't redirect, the app will show login form if needed
         }
       } else {
-        // For web environment, redirect to login
+        // For web environment, don't redirect - let the app handle authentication state
         localStorage.removeItem('auth_token');
-        window.location.href = '/login';
+        // Don't redirect, the app will show login form if needed
       }
     }
-    
+
     return Promise.reject(error);
   }
 );

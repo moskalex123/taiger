@@ -68,13 +68,14 @@ class TMAService {
   get isTMA(): boolean {
     const hasTelegram = !!(window.Telegram && window.Telegram.WebApp);
     const hasInitData = hasTelegram && !!window.Telegram?.WebApp?.initData;
-    
+    const hasUser = hasTelegram && !!window.Telegram?.WebApp?.initDataUnsafe?.user;
+
     // Development mode: check for debug flag
     const isDebugMode = localStorage.getItem('tma_debug_mode') === 'true';
-    
+
     // In production, we want to allow both TMA and regular web access
-    // So we don't strictly require Telegram for the app to work
-    return (hasTelegram && hasInitData) || isDebugMode;
+    // For TMA, we require both initData and user data to be present
+    return (hasTelegram && hasInitData && hasUser) || isDebugMode;
   }
   
   get isReady(): boolean {
@@ -118,7 +119,6 @@ class TMAService {
   }
   
   private applyThemeFromPreference(theme: string): void {
-    const root = document.documentElement;
     const body = document.body;
     
     // Remove existing theme classes

@@ -122,33 +122,15 @@ async function initializeApp() {
   localizationService.setLanguage(savedLanguage);
   console.log('🎯 main.ts: Set localization service language to:', savedLanguage);
 
-  // Initialize language service
-  const languageService = LanguageService.getInstance();
-  console.log('🎯 main.ts: Language service instance created');
-
   const app = createApp(App);
   app.use(i18n);
 
   // Initialize TMA (no-op in web mode)
   await initializeTMA();
 
-  // Initialize language service after TMA is ready
-  try {
-    const apiLanguage = await languageService.getUserLanguage();
-    console.log('🎯 main.ts: Language service initialized successfully with language:', apiLanguage);
-    
-    // If API returned a different language than what we detected, update i18n
-    if (apiLanguage && apiLanguage !== savedLanguage) {
-      console.log('🎯 main.ts: API language differs from detected language, updating i18n...');
-      // Type assertion to handle TypeScript error
-      i18n.global.locale.value = apiLanguage as 'en' | 'ru';
-      localizationService.setLanguage(apiLanguage);
-      savedLanguage = apiLanguage;
-      console.log('🎯 main.ts: Updated i18n locale to:', apiLanguage);
-    }
-  } catch (error) {
-    console.error('🎯 main.ts: Error initializing language service:', error);
-  }
+  // Language service initialization is now handled by App.vue after authentication check
+  // to avoid 401 errors when accessing the app through browser
+  console.log('🎯 main.ts: Language service initialization deferred to App.vue');
 
   app.mount('#app');
 }
