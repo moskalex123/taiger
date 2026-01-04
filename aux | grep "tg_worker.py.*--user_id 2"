@@ -1,8 +1,0 @@
- id | user_id | source_channel |      target_channel      
-----+---------+----------------+--------------------------
- 13 |       2 | -1002929514385 | @livingocean
-  5 |       2 | -1002854900745 | @wildlifen
- 14 |       2 | -1003007491522 | @enterprise_uss
-  1 |       2 | @inatgeochern  | @internationalgeographic
-(4 rows)
-
