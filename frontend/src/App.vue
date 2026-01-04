@@ -483,7 +483,23 @@ const checkTelegramSessionExists = async (headers: Record<string, string>): Prom
 const initializeAuthState = async () => {
   try {
     // Prefer token from localStorage (TMA) but also allow cookie session
-    const token = localStorage.getItem('auth_token');
+    let token = localStorage.getItem('auth_token');
+
+    // If no token in localStorage, try to get from cookies and store it
+    if (!token) {
+      const cookies = document.cookie.split(';');
+      for (const cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'access_token' && value) {
+          token = decodeURIComponent(value);
+          // Store in localStorage for API interceptor
+          localStorage.setItem('auth_token', token);
+          console.log('🔍 Retrieved token from cookies and stored in localStorage');
+          break;
+        }
+      }
+    }
+
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = 'Bearer ' + token;
     const resp = await axios.get('/api/users/me', { withCredentials: true, headers });

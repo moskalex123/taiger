@@ -259,6 +259,9 @@ const handleSubmit = async () => {
       if (response.data.access_token) {
         // Пользователь существует и успешно вошел в систему
         console.log('Пользователь существует и успешно вошел в систему');
+        // Store the access token in localStorage for API interceptor
+        localStorage.setItem('auth_token', response.data.access_token);
+        console.log('🔍 Stored access token in localStorage for API interceptor');
         emit('login');
         return;
       } else if (response.data.status === 'redirect_to_dashboard') {
@@ -417,6 +420,12 @@ const handleSubmit = async () => {
         return;
       }
       
+      // Store the access token in localStorage for API interceptor
+      if (response.data.access_token) {
+        localStorage.setItem('auth_token', response.data.access_token);
+        console.log('🔍 Stored access token in localStorage for API interceptor');
+      }
+
       // Check if user is a newcomer before showing success modal
       await checkAndShowSuccessModal();
     } catch (err: any) {

@@ -546,7 +546,7 @@ export default defineComponent({
           headers['Authorization'] = 'Bearer ' + token;
         }
         
-        const response = await axios.get(`${API_BASE_URL}/api/channel_pairs`, {
+        const response = await axios.get(`/api/channel_pairs`, {
           withCredentials: true,
           headers
         });
@@ -571,8 +571,8 @@ export default defineComponent({
           headers['Authorization'] = 'Bearer ' + token;
         }
         
-        console.log('🔍 ChannelPairs: Fetching models from', `${API_BASE_URL}/api/channel_pairs/models`, 'token:', !!token);
-        const response = await axios.get(`${API_BASE_URL}/api/channel_pairs/models`, {
+        console.log('🔍 ChannelPairs: Fetching models from', `/api/channel_pairs/models`, 'token:', !!token);
+        const response = await axios.get(`/api/channel_pairs/models`, {
           withCredentials: true,
           headers
         });

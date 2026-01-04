@@ -9,7 +9,7 @@ import { API_BASE_URL } from '@/config';
 export async function getDefaultSystemPrompt(language = 'en') {
   try {
     // Try to get the default system prompt from the API
-    const response = await axios.get(`${API_BASE_URL}/system-prompt/default-system-prompt`, {
+    const response = await axios.get(`/system-prompt/default-system-prompt`, {
       params: { language }
     });
     
@@ -30,7 +30,7 @@ export async function getDefaultSystemPrompt(language = 'en') {
  */
 export async function getSupportedLanguages() {
   try {
-    const response = await axios.get(`${API_BASE_URL}/system-prompt/supported-languages`);
+    const response = await axios.get(`/system-prompt/supported-languages`);
     
     if (response.data && response.data.supported_languages) {
       return response.data.supported_languages;

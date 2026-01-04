@@ -1,137 +1,92 @@
 # Project Cleanup and Relocation Plan
 
-This plan outlines the reorganization of the project directory to keep only essential and service files in the root, moving everything else to `taiger/etc`.
+This plan outlines the relocation of non-essential files to the `etc/` directory to keep the project root clean and focused on operational files.
 
-## 1. Essential Files (Stay in Root)
-These files are required for the application to run, build, or are standard configuration files.
-
-### Core Application
-- [`main.py`](main.py) - Entry point for the FastAPI application.
-- [`auth.py`](auth.py) - Authentication logic.
-- [`db.py`](db.py) - Database connection and session management.
-- [`models.py`](models.py) - SQLAlchemy models.
-- [`redis_client.py`](redis_client.py) - Redis connection management.
-- [`queue_manager.py`](queue_manager.py) - Task queue management.
-- [`worker_manager.py`](worker_manager.py) - Worker process management.
-- [`worker_registry.py`](worker_registry.py) - In-memory worker tracking.
-- [`tg_auth.py`](tg_auth.py) - Telegram authentication logic.
-- [`tg_worker.py`](tg_worker.py) - Telegram worker implementation.
-- [`balance_utils.py`](balance_utils.py) - Balance calculation utilities.
-- [`s3_avatar_manager.py`](s3_avatar_manager.py) - S3 storage for avatars.
-- [`s3_session_manager.py`](s3_session_manager.py) - S3 storage for sessions.
-- [`user_priority.py`](user_priority.py) - User priority logic.
-- [`worker_lock.py`](worker_lock.py) - Locking mechanism for workers.
+## Essential Files (To remain in root)
 
 ### Configuration & Environment
-- [`.env`](.env) - Environment variables.
-- [`.env.prod`](.env.prod) - Production environment variables.
-- [`.gitignore`](.gitignore) - Git ignore rules.
-- [`.node-version`](.node-version) - Node.js version config.
-- [`.nvmrc`](.nvmrc) - NVM configuration.
-- [`alembic.ini`](alembic.ini) - Database migration config.
-- [`package.json`](package.json) - Node.js dependencies.
-- [`package-lock.json`](package-lock.json) - Node.js lockfile.
-- [`requirements.txt`](requirements.txt) - Python dependencies.
+- [`.env`](.env)
+- [`.env.prod`](.env.prod)
+- [`.gitignore`](.gitignore)
+- [`.node-version`](.node-version)
+- [`.nvmrc`](.nvmrc)
+- [`alembic.ini`](alembic.ini)
+- [`package.json`](package.json)
+- [`package-lock.json`](package-lock.json)
+- [`requirements.txt`](requirements.txt)
+
+### Core Logic (Python)
+- [`auth.py`](auth.py)
+- [`balance_utils.py`](balance_utils.py)
+- [`db.py`](db.py)
+- [`main.py`](main.py)
+- [`models.py`](models.py)
+- [`queue_manager.py`](queue_manager.py)
+- [`redis_client.py`](redis_client.py)
+- [`s3_avatar_manager.py`](s3_avatar_manager.py)
+- [`s3_session_manager.py`](s3_session_manager.py)
+- [`tg_auth.py`](tg_auth.py)
+- [`tg_worker.py`](tg_worker.py)
+- [`user_priority.py`](user_priority.py)
+- [`worker_lock.py`](worker_lock.py)
+- [`worker_manager.py`](worker_manager.py)
+- [`worker_registry.py`](worker_registry.py)
+
+### Documentation & Assets
+- [`README.md`](README.md)
+- [`bot_start_message.md`](bot_start_message.md)
 
 ### Essential Directories
-- [`alembic/`](alembic/) - Database migrations.
-- [`api/`](api/) - FastAPI route handlers.
-- [`frontend/`](frontend/) - Frontend source code and build.
-- [`locales/`](locales/) - Localization files.
-- [`static/`](static/) - Static assets.
-- [`telegram_bot/`](telegram_bot/) - Telegram bot implementation.
-- [`telegram_worker/`](telegram_worker/) - Worker-specific logic.
-- [`uni_text_processor/`](uni_text_processor/) - Text processing modules.
-- [`sessions/`](sessions/) - Telegram session storage (if local).
+- [`alembic/`](alembic/)
+- [`api/`](api/)
+- [`ctrl/`](ctrl/) (Service management)
+- [`frontend/`](frontend/)
+- [`git/`](git/) (Deployment scripts)
+- [`locales/`](locales/)
+- [`sessions/`](sessions/)
+- [`static/`](static/)
+- [`telegram_bot/`](telegram_bot/)
+- [`telegram_worker/`](telegram_worker/)
+- [`uni_text_processor/`](uni_text_processor/)
 
-## 2. Service Files (Stay in Root/Folders)
-As per instructions, files in `git/` and `ctrl/` folders stay.
+## Files to be moved to `etc/`
 
-- [`git/`](git/) - Deployment and GitHub integration scripts.
-- [`ctrl/`](ctrl/) - Service management scripts.
+The following files are identified as non-essential for the immediate operation of the project or are temporary/backup files.
 
-## 3. Files to Move to `taiger/etc`
-These are non-essential files, logs, backups, temporary scripts, and documentation that are not required for the runtime.
+### SQL & Database Dumps
+- [`add_newcomer_field.sql`](add_newcomer_field.sql) -> `etc/add_newcomer_field.sql`
+- [`create_channel_processing_state.sql`](create_channel_processing_state.sql) -> `etc/create_channel_processing_state.sql`
+- [`taigerdb_dump.sql`](taigerdb_dump.sql) -> `etc/taigerdb_dump.sql`
+- [`taigerdb_new.dump`](taigerdb_new.dump) -> `etc/taigerdb_new.dump`
+- [`taiger.db`](taiger.db) -> `etc/taiger.db` (SQLite database, should be in etc if not used in prod)
 
 ### Logs & Temporary Files
-- `backend.log`
-- `bot_test.log`
-- `telegram_bot.log`
-- `uvicorn.log`
-- `worker_7.log`
-- `nohup.out` (if present)
-- `taiger.db` (SQLite DB, should be in a data folder or etc if not used in prod)
-- `taigerdb_dump.sql`
-- `taigerdb_new.dump`
-- `test_connection.session`
-- `worker_session.session`
+- [`backend.log`](backend.log) -> `etc/logs/backend.log`
+- [`bot_test.log`](bot_test.log) -> `etc/logs/bot_test.log`
+- [`nohup.out`](nohup.out) -> `etc/logs/nohup.out`
+- [`telegram_bot.log`](telegram_bot.log) -> `etc/logs/telegram_bot.log`
+- [`uvicorn.log`](uvicorn.log) -> `etc/logs/uvicorn.log`
+- [`worker_7.log`](worker_7.log) -> `etc/logs/worker_7.log`
+- [`project.tar.gz`](project.tar.gz) -> `etc/project.tar.gz`
 
-### Documentation & Reports
-- [`README.md`](README.md) (Move to etc, or keep a minimal one in root)
-- [`README_for_AI.md`](README_for_AI.md)
-- [`user_guide.md`](user_guide.md)
-- [`user_instruction.md`](user_instruction.md)
-- [`user_manual.md`](user_manual.md)
-- [`users_guide_full.md`](users_guide_full.md)
-- [`language_switching_implementation_report.md`](language_switching_implementation_report.md)
-- [`localization_plan.md`](localization_plan.md)
-- [`project_analysis_report.md`](project_analysis_report.md)
-- [`docs/`](docs/) (Entire directory)
-- [`plans/`](plans/) (Entire directory)
+### Backups & Examples
+- [`.env.telegram.example`](.env.telegram.example) -> `etc/.env.telegram.example`
+- [`nginx.conf.bak`](nginx.conf.bak) -> `etc/nginx.conf.bak`
 
-### Scripts (Non-Service)
-- `auto_setup_aux_vps_access.sh`
-- `check-ui-state.js`
-- `deploy-to-production.sh`
-- `enable-new-ui.bat`
-- `enable-new-ui.sh`
-- `fix-vps-dns.sh`
-- `install_taiger.sh`
-- `manual_register_worker.sh`
-- `monitor_logs.py`
-- `monitor_worker_status.py`
-- `newcomer_cleanup_task.py` (If not imported in main)
-- `pull-from-vps.ps1`
-- `re_front.sh`
-- `setup_aux_vps_access.sh`
-- `setup_passwordless_aux_vps.sh`
-- `setup_ssh_access.sh`
-- `simple-verify.bat`
-- `start_dev.sh`
-- `start.sh`
-- `switch-to-develop.sh`
-- `switch-to-main.sh`
-- `sync-to-vps.ps1`
-- `test_balance_functionality.py`
-- `test_balance_simple.py`
-- `test_keyboard_localization.py`
-- `test_language_switching.py`
-- `test_status_race_condition.py`
-- `find_channel.py`
-- `debug_user_16.py`
+### Miscellaneous
+- [`README_for_AI.md`](README_for_AI.md) -> `etc/README_for_AI.md`
+- [`test_connection.session`](test_connection.session) -> `etc/sessions/test_connection.session`
+- [`worker_session.session`](worker_session.session) -> `etc/sessions/worker_session.session`
 
-### Other
-- `project.tar.gz`
-- `public_key_aux.txt`
-- `ssh_config`
-- `taiger-api.service` (Should be in `/etc/systemd/system/`, copy in root is backup)
-- `taiger-frontend.service`
-- `ubprocess` (likely a typo or temp file)
-- `ystemctl status taiger-api` (typo file)
-- `micro-client-for-self-test/`
-- `add_newcomer_field.sql`
-- `create_channel_processing_state.sql`
-- `nginx.conf` / `nginx_current.conf` / `nginx_fixed.conf` / `nginx.conf.bak`
+## Implementation Steps (GRACE)
 
-## Relocation Commands (GRACE)
-
-```bash
-# Create destination directory
-mkdir -p taiger/etc
-
-# Move files (example)
-# mv backend.log taiger/etc/
-# ...
-```
-
-**Note:** I will wait for your approval before proceeding with the actual move.
+<GRACE>
+1. **Create target directories**: Ensure `etc/logs` and `etc/sessions` exist.
+2. **Move SQL files**: `mv *.sql etc/`
+3. **Move Log files**: `mv *.log etc/logs/` and `mv nohup.out etc/logs/`
+4. **Move Archive files**: `mv project.tar.gz etc/`
+5. **Move Backup/Example files**: `mv .env.telegram.example etc/` and `mv nginx.conf.bak etc/`
+6. **Move Session files**: `mv *.session etc/sessions/`
+7. **Move DB files**: `mv taiger.db etc/`
+8. **Move AI README**: `mv README_for_AI.md etc/`
+</GRACE>

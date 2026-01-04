@@ -291,12 +291,13 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173", 
+        "http://localhost:5173",
         "http://127.0.0.1:5173",
         "https://tactically-healing-parrotfish.cloudpub.ru",  # Для TMA
         "http://localhost:5174",  # Дополнительный порт для разработки
         "http://taiger.pro",  # Для production TMA
-        "https://taiger.pro"  # Для production TMA (HTTPS)
+        "https://taiger.pro",  # Для production TMA (HTTPS)
+        "https://www.taiger.pro"  # Для www subdomain
     ],
     allow_credentials=True,
     allow_methods=["*"],

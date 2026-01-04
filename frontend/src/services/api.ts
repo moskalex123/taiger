@@ -12,28 +12,56 @@ const api = axios.create({
 // Request interceptor to add authentication
 api.interceptors.request.use(
   async (config) => {
+    console.log('🔍 API Request:', {
+      url: config.url,
+      method: config.method,
+      origin: window.location.origin,
+      isTMA: tmaService.isTMA,
+      fullUrl: `${config.baseURL || ''}${config.url || ''}`
+    });
+
     // For TMA environment, try to get token from TMA service
     if (tmaService.isTMA) {
       try {
         const authData = await tmaService.authenticateWithBackend();
         if (authData?.access_token) {
           config.headers.Authorization = `Bearer ${authData.access_token}`;
+          console.log('🔍 TMA auth successful, token added');
         }
       } catch (error) {
         console.warn('TMA authentication failed, using existing token if available');
         const existingToken = localStorage.getItem('auth_token');
         if (existingToken) {
           config.headers.Authorization = `Bearer ${existingToken}`;
+          console.log('🔍 Using existing token from localStorage');
         }
       }
     } else {
-      // For web environment, use regular token
-      const token = localStorage.getItem('auth_token');
+      // For web environment, check both localStorage and cookies
+      let token = localStorage.getItem('auth_token');
+
+      // If no token in localStorage, try to get from cookies
+      if (!token) {
+        // Parse cookies to find access_token
+        const cookies = document.cookie.split(';');
+        for (const cookie of cookies) {
+          const [name, value] = cookie.trim().split('=');
+          if (name === 'access_token' && value) {
+            token = decodeURIComponent(value);
+            console.log('🔍 Web environment, token found in cookies');
+            break;
+          }
+        }
+      }
+
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
+        console.log('🔍 Web environment, token added to Authorization header');
+      } else {
+        console.log('🔍 Web environment, no token found in localStorage or cookies');
       }
     }
-    
+
     return config;
   },
   (error) => {
@@ -63,8 +91,11 @@ api.interceptors.response.use(
           // Don't redirect, the app will show login form if needed
         }
       } else {
-        // For web environment, don't redirect - let the app handle authentication state
+        // For web environment, clear both localStorage and cookies
         localStorage.removeItem('auth_token');
+        // Clear the access_token cookie
+        document.cookie = 'access_token=; Max-Age=0; path=/; secure; samesite=lax';
+        console.log('🔍 Web environment, cleared auth token from localStorage and cookies');
         // Don't redirect, the app will show login form if needed
       }
     }

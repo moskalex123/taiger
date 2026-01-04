@@ -242,16 +242,34 @@ class TMAService {
 
   // Authentication-related methods
   async authenticateWithBackend(forceRefresh: boolean = false): Promise<any> {
-    // If not in TMA, we might want to use a different authentication method
+    // If not in TMA, try to get token from localStorage or cookies
     if (!this.isTMA) {
-      tmaLog('Not in TMA environment, skipping TMA authentication');
-      // Check if we have a regular auth token
-      const existingToken = localStorage.getItem('auth_token');
-      if (existingToken) {
-        return { access_token: existingToken };
+      tmaLog('Not in TMA environment, checking for existing token');
+      
+      // First try localStorage
+      let token = localStorage.getItem('auth_token');
+      
+      // If no token in localStorage, try cookies
+      if (!token) {
+        const cookies = document.cookie.split(';');
+        for (const cookie of cookies) {
+          const [name, value] = cookie.trim().split('=');
+          if (name === 'access_token' && value) {
+            token = decodeURIComponent(value);
+            // Store in localStorage for API interceptor
+            localStorage.setItem('auth_token', token);
+            tmaLog('Retrieved token from cookies and stored in localStorage');
+            break;
+          }
+        }
       }
-      // For non-TMA environments, we might want to redirect to a login page
-      // or allow anonymous access depending on the app's requirements
+      
+      if (token) {
+        tmaLog('Found existing token in browser mode');
+        return { access_token: token };
+      }
+      
+      tmaLog('No token found in browser mode');
       return null;
     }
     
