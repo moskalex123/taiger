@@ -58,7 +58,7 @@ class ProcessManager:
         """Start authorization service for user."""
         if user_id in self.auth_processes:
             if self.is_process_running(self.auth_processes[user_id]):
-                self.logger.info(f"Auth service already running for user {user_id}")
+                self.logger.debug(f"Auth service already running for user {user_id}")
                 return True
             else:
                 del self.auth_processes[user_id]
@@ -80,7 +80,7 @@ class ProcessManager:
             )
             
             self.auth_processes[user_id] = process
-            self.logger.info(f"Started auth service for user {user_id} on port {port}")
+            self.logger.debug(f"Started auth service for user {user_id} on port {port}")
             
             # Wait a bit to check if process started successfully
             await asyncio.sleep(2)
@@ -98,7 +98,7 @@ class ProcessManager:
         """Start worker service for user."""
         if user_id in self.worker_processes:
             if self.is_process_running(self.worker_processes[user_id]):
-                self.logger.info(f"Worker service already running for user {user_id}")
+                self.logger.debug(f"Worker service already running for user {user_id}")
                 return True
             else:
                 del self.worker_processes[user_id]
@@ -133,10 +133,10 @@ class ProcessManager:
             # Сохраняем ссылки на лог-файлы для последующего закрытия
             process._stdout_log = stdout_log
             process._stderr_log = stderr_log
-            self.logger.info(f"Started worker service for user {user_id} on port {port}")
+            self.logger.debug(f"Started worker service for user {user_id} on port {port}")
             
             # Wait for process to start and register in WorkerRegistry
-            self.logger.info(f"Waiting for worker {user_id} to initialize...")
+            self.logger.debug(f"Waiting for worker {user_id} to initialize...")
             
             # Check process is running
             await asyncio.sleep(0.5)  # Уменьшили с 2 до 0.5 секунд
@@ -151,19 +151,19 @@ class ProcessManager:
             # успешной инициализации Telegram соединения
             
             # Ждем, пока воркер сам себя зарегистрирует
-            self.logger.info(f"Waiting for worker {user_id} to self-register...")
+            self.logger.debug(f"Waiting for worker {user_id} to self-register...")
             
             # Проверяем регистрацию в течение 60 секунд с более частыми проверками
             from worker_registry import worker_registry
             for attempt in range(300):  # 300 попыток по 0.2 секунды = ~60 секунд
                 await asyncio.sleep(0.2)  # Проверяем каждые 200мс для быстрого отклика
                 if worker_registry.is_worker_running(user_id):
-                    self.logger.info(f"Worker {user_id} successfully self-registered after {attempt * 0.2:.1f}s")
+                    self.logger.debug(f"Worker {user_id} successfully self-registered after {attempt * 0.2:.1f}s")
                     break
                 # Fallback: accept as started if worker HTTP health is OK
                 try:
                     if await self.check_service_health(user_id, "worker"):
-                        self.logger.info(f"Worker {user_id} HTTP health OK after {attempt * 0.2:.1f}s; proceeding without registry")
+                        self.logger.debug(f"Worker {user_id} HTTP health OK after {attempt * 0.2:.1f}s; proceeding without registry")
                         break
                 except Exception:
                     pass
@@ -180,7 +180,7 @@ class ProcessManager:
                 stderr_log.close()
                 return False
             
-            self.logger.info(f"Worker {user_id} started successfully")
+            self.logger.debug(f"Worker {user_id} started successfully")
             return True
             
         except Exception as e:
@@ -203,7 +203,7 @@ class ProcessManager:
                     process.wait()
             
             del self.auth_processes[user_id]
-            self.logger.info(f"Stopped auth service for user {user_id}")
+            self.logger.debug(f"Stopped auth service for user {user_id}")
             return True
             
         except Exception as e:
@@ -227,18 +227,18 @@ class ProcessManager:
             worker_info = worker_registry.get_worker_info(user_id)
             if worker_info and 'pid' in worker_info:
                 pid_to_kill = worker_info['pid']
-                self.logger.info(f"Found worker PID {pid_to_kill} for user {user_id} from registry")
+                self.logger.debug(f"Found worker PID {pid_to_kill} for user {user_id} from registry")
         
         # If still no PID found, worker is not running
         if pid_to_kill is None:
-            self.logger.info(f"No worker found for user {user_id} to stop")
+            self.logger.debug(f"No worker found for user {user_id} to stop")
             worker_registry.remove_worker(user_id)  # Cleanup registry just in case
             return True
         
         try:
             # If we have a subprocess.Popen object, use it
             if process and self.is_process_running(process):
-                self.logger.info(f"Terminating worker process {pid_to_kill} for user {user_id} via Popen")
+                self.logger.debug(f"Terminating worker process {pid_to_kill} for user {user_id} via Popen")
                 process.terminate()
                 try:
                     process.wait(timeout=10)
@@ -254,7 +254,7 @@ class ProcessManager:
                     process._stderr_log.close()
             else:
                 # Kill by PID using psutil
-                self.logger.info(f"Terminating worker process {pid_to_kill} for user {user_id} via psutil")
+                self.logger.debug(f"Terminating worker process {pid_to_kill} for user {user_id} via psutil")
                 try:
                     proc = psutil.Process(pid_to_kill)
                     if proc.is_running():
@@ -265,9 +265,9 @@ class ProcessManager:
                             self.logger.warning(f"Worker {pid_to_kill} did not terminate gracefully, killing")
                             proc.kill()
                             proc.wait()
-                        self.logger.info(f"Worker process {pid_to_kill} terminated successfully")
+                        self.logger.debug(f"Worker process {pid_to_kill} terminated successfully")
                 except psutil.NoSuchProcess:
-                    self.logger.info(f"Worker process {pid_to_kill} already terminated")
+                    self.logger.debug(f"Worker process {pid_to_kill} already terminated")
                 except psutil.AccessDenied:
                     self.logger.error(f"Access denied when trying to terminate PID {pid_to_kill}")
                     return False
@@ -278,7 +278,7 @@ class ProcessManager:
             
             # Remove worker from WorkerRegistry
             worker_registry.remove_worker(user_id)
-            self.logger.info(f"Stopped worker service for user {user_id} and removed from WorkerRegistry")
+            self.logger.debug(f"Stopped worker service for user {user_id} and removed from WorkerRegistry")
             return True
             
         except Exception as e:
@@ -411,7 +411,7 @@ class ProcessManager:
         
         for user_id in dead_auth:
             del self.auth_processes[user_id]
-            self.logger.info(f"Cleaned up dead auth process for user {user_id}")
+            self.logger.debug(f"Cleaned up dead auth process for user {user_id}")
         
         # Clean up worker processes
         dead_workers = []
@@ -421,7 +421,7 @@ class ProcessManager:
         
         for user_id in dead_workers:
             del self.worker_processes[user_id]
-            self.logger.info(f"Cleaned up dead worker process for user {user_id}")
+            self.logger.debug(f"Cleaned up dead worker process for user {user_id}")
     
     def get_running_services(self) -> Dict[str, List[int]]:
         """Get list of running services."""

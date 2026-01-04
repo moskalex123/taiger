@@ -116,7 +116,7 @@ class S3AvatarManager:
         if not self.s3_enabled:
             # When S3 is not configured, avatar is already local - just return True
             if os.path.exists(local_avatar_path):
-                self.logger.info(f"Avatar kept locally: {local_avatar_path}")
+                self.logger.debug(f"Avatar kept locally: {local_avatar_path}")
                 return True
             return False
             
@@ -138,7 +138,7 @@ class S3AvatarManager:
                 ExtraArgs={'ContentType': 'image/jpeg'}
             )
             
-            self.logger.info(f"Compressed avatar uploaded to S3: {avatar_key} (size: {len(compressed_data)} bytes)")
+            self.logger.debug(f"Compressed avatar uploaded to S3: {avatar_key} (size: {len(compressed_data)} bytes)")
             return True
             
         except FileNotFoundError:
@@ -157,7 +157,7 @@ class S3AvatarManager:
             # When S3 is not configured, check if avatar exists locally
             avatar_path = f"frontend/dist/avatars/{user_id}.png"
             if os.path.exists(avatar_path):
-                self.logger.info(f"Avatar found locally: {avatar_path}")
+                self.logger.debug(f"Avatar found locally: {avatar_path}")
                 return True
             return False
             
@@ -174,7 +174,7 @@ class S3AvatarManager:
                     avatar_file
                 )
             
-            self.logger.info(f"Avatar downloaded from S3: {avatar_key}")
+            self.logger.debug(f"Avatar downloaded from S3: {avatar_key}")
             return True
             
         except ClientError as e:
@@ -200,7 +200,7 @@ class S3AvatarManager:
                 Key=avatar_key
             )
             
-            self.logger.info(f"Avatar deleted from S3: {avatar_key}")
+            self.logger.debug(f"Avatar deleted from S3: {avatar_key}")
             return True
             
         except Exception as e:
@@ -245,10 +245,10 @@ class S3AvatarManager:
                 with open(avatar_path, 'wb') as f:
                     f.write(avatar_data)
                 
-                self.logger.info(f"Avatar updated locally: {avatar_path}")
+                self.logger.debug(f"Avatar updated locally: {avatar_path}")
                 return True
             except Exception as e:
-                self.logger.error(f"Failed to save avatar locally: {e}")
+                self.logger.debug(f"Failed to save avatar locally: {e}")
                 return False
         
         try:
@@ -262,16 +262,17 @@ class S3AvatarManager:
                 ContentType='image/jpeg'
             )
             
-            self.logger.info(f"Avatar updated in S3: {avatar_key}")
+            self.logger.debug(f"Avatar updated in S3: {avatar_key}")
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to update avatar in S3: {e}")
+            self.logger.debug(f"Failed to update avatar in S3: {e}")
             return False
 
     def list_avatars(self) -> list:
         """List all avatar files in S3."""
         if not self.s3_enabled:
+            self.logger.debug("No avatars found in S3")
             return []
             
         try:
@@ -295,8 +296,9 @@ class S3AvatarManager:
                             'size': obj['Size']
                         })
             
+            self.logger.debug(f"Found {len(avatars)} avatars in S3")
             return avatars
             
         except Exception as e:
-            self.logger.error(f"Failed to list avatars: {e}")
+            self.logger.debug(f"Failed to list avatars: {e}")
             return []

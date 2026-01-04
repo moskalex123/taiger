@@ -539,23 +539,23 @@ class TelegramAuth:
         try:
             self.logger.info(f"finalize_auth enter. state: {self._client_state()}")
             # Get user info
-            self.logger.info(f"finalize_auth step=get_me (before). state: {self._client_state()}")
+            self.logger.debug(f"finalize_auth step=get_me (before). state: {self._client_state()}")
             me = await self.client.get_me()
             if not me:
                 raise Exception("Failed to get user info")
 
-            self.logger.info(f"finalize_auth step=get_me (after) telegram_id={getattr(me, 'id', None)} username={getattr(me, 'username', None)}")
+            self.logger.debug(f"finalize_auth step=get_me (after) telegram_id={getattr(me, 'id', None)} username={getattr(me, 'username', None)}")
             
             self.logger.info(f"Successfully authenticated as {me.username} (ID: {me.id})")
             
             # Download and save user avatar
-            self.logger.info(f"finalize_auth step=avatar_download (before). state: {self._client_state()}")
+            self.logger.debug(f"finalize_auth step=avatar_download (before). state: {self._client_state()}")
             avatar_saved = await self._download_and_save_avatar(me)
-            self.logger.info(f"finalize_auth step=avatar_download (after) avatar_saved={avatar_saved}. state: {self._client_state()}")
+            self.logger.debug(f"finalize_auth step=avatar_download (after) avatar_saved={avatar_saved}. state: {self._client_state()}")
             
             # Disconnect to save session
             if self.client.is_connected:
-                self.logger.info(f"finalize_auth step=client_stop (before). state: {self._client_state()}")
+                self.logger.debug(f"finalize_auth step=client_stop (before). state: {self._client_state()}")
                 try:
                     await self.client.stop()
                 except Exception as stop_error:
@@ -567,25 +567,25 @@ class TelegramAuth:
                         )
                     else:
                         raise
-                self.logger.info(f"finalize_auth step=client_stop (after). state: {self._client_state()}")
+                self.logger.debug(f"finalize_auth step=client_stop (after). state: {self._client_state()}")
             
             # Upload session to S3
             session_saved = False
             if os.path.exists(self.session_path):
-                self.logger.info(f"finalize_auth step=s3_upload (before). state: {self._client_state()}")
+                self.logger.debug(f"finalize_auth step=s3_upload (before). state: {self._client_state()}")
                 session_saved = self.s3_manager.upload_session(self.user_id, self.session_path)
                 if session_saved:
                     self.logger.info("Session uploaded to S3")
                 else:
                     self.logger.error("Failed to upload session to S3")
-                self.logger.info(f"finalize_auth step=s3_upload (after) session_saved={session_saved}. state: {self._client_state()}")
+                self.logger.debug(f"finalize_auth step=s3_upload (after) session_saved={session_saved}. state: {self._client_state()}")
             else:
                 self.logger.warning(f"finalize_auth session_path missing, cannot upload. state: {self._client_state()}")
             
             # Update database
-            self.logger.info(f"finalize_auth step=db_update (before). state: {self._client_state()}")
+            self.logger.debug(f"finalize_auth step=db_update (before). state: {self._client_state()}")
             await self._update_session_in_db(me.id, me.username)
-            self.logger.info(f"finalize_auth step=db_update (after). state: {self._client_state()}")
+            self.logger.debug(f"finalize_auth step=db_update (after). state: {self._client_state()}")
             
             return {
                 "status": "success",

@@ -156,7 +156,7 @@ def _is_message_recently_promoted(user_id: int, message_id: int) -> bool:
     if message_id in user_promotions:
         age = (now - user_promotions[message_id]).total_seconds()
         if age <= _PROMOTION_GRACE_PERIOD:
-            logger.warning(f"grace: [PROTECTED_MESSAGE] user={user_id} msg_id={message_id} age={age:.1f}s - refusing to delete")
+            logger.warning(f"[PROTECTED_MESSAGE] user={user_id} msg_id={message_id} age={age:.1f}s - refusing to delete")
             return True
 
     return False
@@ -754,8 +754,8 @@ async def send_bot_status(request: BotStatusRequest):
 
         telegram_id = request.telegram_id
 
-        # grace: Log incoming status request
-        logger.info(f"grace: [API_STATUS] user={request.user_id} last_id={request.last_status_message_id}")
+        # Log incoming status request
+        logger.debug(f"API status update: user={request.user_id} last_id={request.last_status_message_id}")
 
         # Don't add 🔄 prefix if message already starts with an emoji
         raw_message = request.message
@@ -776,7 +776,7 @@ async def send_bot_status(request: BotStatusRequest):
             if request.last_status_message_id:
                 if _is_message_recently_promoted(request.user_id, request.last_status_message_id):
                     # Don't delete protected messages - send new status without deleting old
-                    logger.warning(f"grace: [API_STATUS_SKIP_DELETE] user={request.user_id} msg_id={request.last_status_message_id} - message is protected")
+                    logger.warning(f"Skipping status deletion: user={request.user_id} msg_id={request.last_status_message_id} - message is protected")
                     # Clear the status slot since we're not replacing the old message
                     await save_last_status_message_id(request.user_id, None)
                     # Send new status message without deleting the protected one
@@ -790,7 +790,7 @@ async def send_bot_status(request: BotStatusRequest):
                         if response.status == 200:
                             data = await response.json()
                             message_id = data.get("result", {}).get("message_id")
-                            logger.info(f"grace: [API_STATUS_SENT_PROTECTED] user={request.user_id} new_msg_id={message_id}")
+                            logger.debug(f"Status sent (protected mode): user={request.user_id} new_msg_id={message_id}")
                             return {
                                 "status": "success",
                                 "action": "sent_protected",
@@ -798,11 +798,11 @@ async def send_bot_status(request: BotStatusRequest):
                             }
                         else:
                             response_text = await response.text()
-                            logger.error(f"grace: [API_STATUS_SEND_FAILED_PROTECTED] user={request.user_id} http={response.status}")
+                            logger.error(f"[API_STATUS_SEND_FAILED_PROTECTED] user={request.user_id} http={response.status}")
                             return {"status": "error", "message": response_text}
                 else:
                     # Normal deletion for unprotected messages
-                    logger.info(f"grace: [API_STATUS_DELETE_ATTEMPT] user={request.user_id} msg_id={request.last_status_message_id}")
+                    logger.debug(f"Deleting old status: user={request.user_id} msg_id={request.last_status_message_id}")
                     try:
                         delete_url = f"https://api.telegram.org/bot{telegram_token}/deleteMessage"
                         delete_payload = {
@@ -811,18 +811,18 @@ async def send_bot_status(request: BotStatusRequest):
                         }
                         async with session.post(delete_url, json=delete_payload) as del_resp:
                             if del_resp.status == 200:
-                                logger.info(f"grace: [API_STATUS_DELETED] user={request.user_id} msg_id={request.last_status_message_id}")
+                                logger.debug(f"Old status deleted: user={request.user_id} msg_id={request.last_status_message_id}")
                                 logger.debug(f"Deleted old status message {request.last_status_message_id}")
                             else:
                                 response_text = await del_resp.text()
-                                logger.warning(f"grace: [API_STATUS_DELETE_FAILED] user={request.user_id} msg_id={request.last_status_message_id} http={del_resp.status} resp='{response_text[:100]}'")
+                                logger.warning(f"[API_STATUS_DELETE_FAILED] user={request.user_id} msg_id={request.last_status_message_id} http={del_resp.status} resp='{response_text[:100]}'")
                                 logger.debug(f"Could not delete old status {request.last_status_message_id}: HTTP {del_resp.status}")
                     except Exception as del_e:
-                        logger.warning(f"grace: [API_STATUS_DELETE_EXCEPTION] user={request.user_id} msg_id={request.last_status_message_id} error={del_e}")
+                        logger.warning(f"[API_STATUS_DELETE_EXCEPTION] user={request.user_id} msg_id={request.last_status_message_id} error={del_e}")
                         logger.debug(f"Could not delete old status: {del_e}")
 
             # Send new status message
-            logger.info(f"grace: [API_STATUS_SEND] user={request.user_id} text='{message_text[:50]}...'")
+            logger.debug(f"Sending status: user={request.user_id} text='{message_text[:50]}...'")
             send_url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
             send_payload = {
                 "chat_id": telegram_id,
@@ -834,7 +834,7 @@ async def send_bot_status(request: BotStatusRequest):
                 if response.status == 200:
                     data = await response.json()
                     message_id = data.get("result", {}).get("message_id")
-                    logger.info(f"grace: [API_STATUS_SENT] user={request.user_id} new_msg_id={message_id}")
+                    logger.debug(f"Status sent: user={request.user_id} new_msg_id={message_id}")
                     logger.debug(f"New status sent: msg_id={message_id}")
                     return {
                         "status": "success",
@@ -844,16 +844,16 @@ async def send_bot_status(request: BotStatusRequest):
                 elif response.status == 429:
                     data = await response.json()
                     retry_after = data.get("parameters", {}).get("retry_after")
-                    logger.warning(f"grace: [API_STATUS_RATE_LIMIT] user={request.user_id} retry_after={retry_after}")
+                    logger.warning(f"Rate limited: user={request.user_id} retry_after={retry_after}")
                     return {"status": "rate_limited", "retry_after": retry_after}
                 else:
                     response_text = await response.text()
-                    logger.error(f"grace: [API_STATUS_SEND_FAILED] user={request.user_id} http={response.status}")
+                    logger.error(f"[API_STATUS_SEND_FAILED] user={request.user_id} http={response.status}")
                     logger.error(f"Failed to send status: HTTP {response.status}, {response_text}")
                     return {"status": "error", "message": response_text}
 
     except Exception as e:
-        logger.error(f"grace: [API_STATUS_EXCEPTION] user={request.user_id} error={e}")
+        logger.error(f"Status update exception: user={request.user_id} error={e}")
         logger.error(f"Error in send_bot_status: {e}")
         return {"status": "error", "message": str(e)}
 
@@ -878,8 +878,8 @@ async def send_bot_report(request: BotReportRequest):
 
         telegram_id = request.telegram_id
 
-        # grace: Log incoming report request
-        logger.info(f"grace: [API_REPORT] user={request.user_id} target_id={request.last_status_message_id} type={request.report_type}")
+        # Log incoming report request
+        logger.debug(f"API report request: user={request.user_id} target_id={request.last_status_message_id} type={request.report_type}")
 
         # Choose icon based on report type
         icon = "✅" if request.report_type == "success" else "❌" if request.report_type == "error" else "⚠️"
@@ -888,7 +888,7 @@ async def send_bot_report(request: BotReportRequest):
         async with aiohttp.ClientSession() as session:
             # Try to edit existing status message to become the report
             if request.last_status_message_id:
-                logger.info(f"grace: [API_REPORT_PROMOTE_ATTEMPT] user={request.user_id} msg_id={request.last_status_message_id}")
+                logger.debug(f"Promoting status to report: user={request.user_id} msg_id={request.last_status_message_id}")
                 try:
                     edit_url = f"https://api.telegram.org/bot{telegram_token}/editMessageText"
                     edit_payload = {
@@ -899,7 +899,7 @@ async def send_bot_report(request: BotReportRequest):
                     }
                     async with session.post(edit_url, json=edit_payload) as response:
                         if response.status == 200:
-                            logger.info(f"grace: [API_REPORT_PROMOTED] user={request.user_id} msg_id={request.last_status_message_id}")
+                            logger.debug(f"Status promoted to report: user={request.user_id} msg_id={request.last_status_message_id}")
                             logger.info(f"Status promoted to report: msg_id={request.last_status_message_id}")
                             # CRITICAL: Mark message as promoted to prevent status overwrites
                             _mark_message_promoted(request.user_id, request.last_status_message_id)
@@ -912,7 +912,7 @@ async def send_bot_report(request: BotReportRequest):
                             }
                         else:
                             response_text = await response.text()
-                            logger.info(f"grace: [API_REPORT_PROMOTE_FAILED] user={request.user_id} msg_id={request.last_status_message_id} http={response.status}")
+                            logger.debug(f"Promote failed: user={request.user_id} msg_id={request.last_status_message_id} http={response.status}")
                             # If old message exists but edit failed, try to delete it
                             if "message to edit not found" not in response_text.lower():
                                 try:
@@ -928,7 +928,7 @@ async def send_bot_report(request: BotReportRequest):
                                     logger.debug(f"Could not delete old status before report: {del_e}")
                             logger.debug(f"Promote failed, sending new report: {response_text}")
                 except Exception as e:
-                    logger.info(f"grace: [API_REPORT_PROMOTE_EXCEPTION] user={request.user_id} msg_id={request.last_status_message_id} error={e}")
+                    logger.debug(f"Promote exception: user={request.user_id} msg_id={request.last_status_message_id} error={e}")
                     logger.debug(f"Promote exception, sending new report: {e}")
                     # Try to delete old status message
                     try:
@@ -944,7 +944,7 @@ async def send_bot_report(request: BotReportRequest):
                         logger.debug(f"Could not delete old status before report: {del_e}")
 
             # Send new report message
-            logger.info(f"grace: [API_REPORT_SEND_NEW] user={request.user_id} target_id={request.last_status_message_id}")
+            logger.debug(f"Sending report: user={request.user_id} target_id={request.last_status_message_id}")
             send_url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
             send_payload = {
                 "chat_id": telegram_id,
@@ -957,7 +957,7 @@ async def send_bot_report(request: BotReportRequest):
                 if response.status == 200:
                     data = await response.json()
                     message_id = data.get("result", {}).get("message_id")
-                    logger.info(f"grace: [API_REPORT_SENT] user={request.user_id} new_msg_id={message_id}")
+                    logger.debug(f"Report sent: user={request.user_id} new_msg_id={message_id}")
                     logger.info(f"New report sent ({request.report_type}): msg_id={message_id}")
                     # CRITICAL: Mark new report as promoted to prevent status overwrites
                     if message_id:
@@ -972,15 +972,15 @@ async def send_bot_report(request: BotReportRequest):
                 elif response.status == 429:
                     data = await response.json()
                     retry_after = data.get("parameters", {}).get("retry_after")
-                    logger.warning(f"grace: [API_REPORT_RATE_LIMIT] user={request.user_id} retry_after={retry_after}")
+                    logger.warning(f"Rate limited: user={request.user_id} retry_after={retry_after}")
                     return {"status": "rate_limited", "retry_after": retry_after}
                 else:
                     response_text = await response.text()
-                    logger.error(f"grace: [API_REPORT_SEND_FAILED] user={request.user_id} http={response.status}")
+                    logger.error(f"[API_REPORT_SEND_FAILED] user={request.user_id} http={response.status}")
                     logger.error(f"Failed to send report: HTTP {response.status}, {response_text}")
                     return {"status": "error", "message": response_text}
 
     except Exception as e:
-        logger.error(f"grace: [API_REPORT_EXCEPTION] user={request.user_id} error={e}")
+        logger.error(f"Report exception: user={request.user_id} error={e}")
         logger.error(f"Error in send_bot_report: {e}")
         return {"status": "error", "message": str(e)}
