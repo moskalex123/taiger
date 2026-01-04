@@ -281,7 +281,7 @@ class UnifiedMessenger:
                 api_url = f"{get_api_base_url()}/api/internal/bot-status"
 
                 # grace: Log status send attempt
-                self.logger.info(f"grace: [STATUS_START] user={self.user_id} last_id={self.last_status_message_id} text='{message[:50]}...'")
+                self.logger.info(f"[STATUS_START] user={self.user_id} last_id={self.last_status_message_id} text='{message[:50]}...'")
 
                 payload = {
                     "user_id": self.user_id,
@@ -296,21 +296,21 @@ class UnifiedMessenger:
                         new_message_id = data.get("message_id")
                         if new_message_id:
                             await self._save_status_message_id(int(new_message_id))
-                            self.logger.info(f"grace: [STATUS_SUCCESS] user={self.user_id} new_msg_id={new_message_id}")
+                            self.logger.info(f"[STATUS_SUCCESS] user={self.user_id} new_msg_id={new_message_id}")
                         self.logger.debug(f"User status sent: {message[:50]}...")
                         
                         # Mirror status to TMA
                         await self.log_mirror.mirror_status(message)
                     else:
                         text = await response.text()
-                        self.logger.error(f"grace: [STATUS_FAILED] user={self.user_id} last_id={self.last_status_message_id} http={response.status}")
+                        self.logger.error(f"[STATUS_FAILED] user={self.user_id} last_id={self.last_status_message_id} http={response.status}")
                         self.logger.error(f"Failed to send user status: HTTP {response.status}, {text}")
 
             except asyncio.TimeoutError:
-                self.logger.error(f"grace: [STATUS_TIMEOUT] user={self.user_id} last_id={self.last_status_message_id}")
+                self.logger.error(f"[STATUS_TIMEOUT] user={self.user_id} last_id={self.last_status_message_id}")
                 self.logger.error(f"Timeout sending status to user {self.user_id}")
             except Exception as e:
-                self.logger.error(f"grace: [STATUS_ERROR] user={self.user_id} last_id={self.last_status_message_id} error={e}")
+                self.logger.error(f"[STATUS_ERROR] user={self.user_id} last_id={self.last_status_message_id} error={e}")
                 self.logger.error(f"Failed to send user status: {e}")
 
     async def _send_user_report(self, message: str, report_type: str = "success"):
@@ -325,7 +325,7 @@ class UnifiedMessenger:
 
                 # grace: Capture ID and clear locally BEFORE network call to prevent race condition
                 target_id = self.last_status_message_id
-                self.logger.info(f"grace: [REPORT_START] user={self.user_id} target_id={target_id} type={report_type}")
+                self.logger.info(f"[REPORT_START] user={self.user_id} target_id={target_id} type={report_type}")
 
                 payload = {
                     "user_id": self.user_id,
@@ -342,21 +342,21 @@ class UnifiedMessenger:
                         # CRITICAL: Also clear local state to prevent next status from using old ID
                         self.last_status_message_id = None
                         self._status_loaded = False
-                        self.logger.info(f"grace: [REPORT_SUCCESS] user={self.user_id} cleared_id={target_id}")
+                        self.logger.info(f"[REPORT_SUCCESS] user={self.user_id} cleared_id={target_id}")
                         self.logger.debug(f"User report sent ({report_type}): {message[:50]}...")
                         
                         # Mirror report to TMA
                         await self.log_mirror.mirror_report(message, report_type)
                     else:
                         text = await response.text()
-                        self.logger.error(f"grace: [REPORT_FAILED] user={self.user_id} target_id={target_id} http={response.status}")
+                        self.logger.error(f"[REPORT_FAILED] user={self.user_id} target_id={target_id} http={response.status}")
                         self.logger.error(f"Failed to send user report: HTTP {response.status}, {text}")
 
             except asyncio.TimeoutError:
-                self.logger.error(f"grace: [REPORT_TIMEOUT] user={self.user_id} target_id={target_id}")
+                self.logger.error(f"[REPORT_TIMEOUT] user={self.user_id} target_id={target_id}")
                 self.logger.error(f"Timeout sending report to user {self.user_id}")
             except Exception as e:
-                self.logger.error(f"grace: [REPORT_ERROR] user={self.user_id} target_id={target_id} error={e}")
+                self.logger.error(f"[REPORT_ERROR] user={self.user_id} target_id={target_id} error={e}")
                 self.logger.error(f"Failed to send user report: {e}")
 
     async def send_report(self, message: str, report_type: str = "success"):

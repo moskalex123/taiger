@@ -63,7 +63,7 @@ class S3SessionManager:
         if not self.s3_enabled:
             # When S3 is not configured, session is already local - just return True
             if os.path.exists(local_session_path):
-                self.logger.info(f"Session kept locally: {local_session_path}")
+                self.logger.debug(f"Session kept locally: {local_session_path}")
                 return True
             return False
             
@@ -81,7 +81,7 @@ class S3SessionManager:
                     session_key
                 )
             
-            self.logger.info(f"Session uploaded to S3: {session_key}")
+            self.logger.debug(f"Session uploaded to S3: {session_key}")
             return True
             
         except FileNotFoundError:
@@ -99,7 +99,7 @@ class S3SessionManager:
         if not self.s3_enabled:
             # When S3 is not configured, check if session exists locally
             if os.path.exists(local_session_path):
-                self.logger.info(f"Session found locally: {local_session_path}")
+                self.logger.debug(f"Session found locally: {local_session_path}")
                 return True
             return False
             
@@ -116,7 +116,7 @@ class S3SessionManager:
                     session_file
                 )
             
-            self.logger.info(f"Session downloaded from S3: {session_key}")
+            self.logger.debug(f"Session downloaded from S3: {session_key}")
             return True
             
         except ClientError as e:
@@ -139,7 +139,7 @@ class S3SessionManager:
                 Key=session_key
             )
             
-            self.logger.info(f"Session deleted from S3: {session_key}")
+            self.logger.debug(f"Session deleted from S3: {session_key}")
             return True
             
         except Exception as e:
@@ -169,7 +169,7 @@ class S3SessionManager:
             )
             
             session_data = response['Body'].read()
-            self.logger.info(f"Session retrieved from S3: {session_key}")
+            self.logger.debug(f"Session retrieved from S3: {session_key}")
             return session_data
             
         except ClientError as e:
